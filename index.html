@@ -3,208 +3,232 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Emergency Ticker | EN top / JA bottom</title>
+  <title>HANAZONO Updates Ticker</title>
   <style>
     :root{
-      --band-bg: #000;           /* 背景：黒（高コントラスト） */
-      --text-color: #fff;        /* 文字：白 */
-      --label-bg: #c40000;       /* ラベル：赤 */
-      --label-color: #fff;       /* ラベル文字：白 */
-      --line-gap: 4px;           /* 英/日 行間 */
-      --speed-pps: 150;          /* ★ 同速スクロール px/s */
-      --pause-sec: 0.8;          /* ループごとの一時停止 */
-      --font-min: 18px;          /* フォント下限 */
-      --font-max: 120px;         /* フォント上限（ラベル×1.5でも上限あり） */
-      --content-font: 28px;      /* JSでラベルの1.5倍に更新 */
+      --band-bg: #000;
+      --text-color: #fff;
+      --label-bg: #c40000;
+      --label-color: #fff;
+      --font-min: 40px; /* 70% up from 24px */
+      --font-max: 143px; /* 70% up from 84px */
+      --font-dyn: 4.76vw; /* 70% up from 2.8vw */
+      --speed-pps: 150;
+      --scroll-threshold: 0.96;
+      --update-interval-sec: 60;
+      --gap-px: 80;
     }
 
     *{box-sizing:border-box}
-    html,body{height:100%;margin:0;background:transparent}
+    html,body{height:100%;margin:0;background:transparent;}
 
-    .band{width:100%;height:100%;display:flex;overflow:hidden;background:var(--band-bg);color:var(--text-color);
-      border-top:3px solid rgba(255,255,255,.2); border-bottom:3px solid rgba(255,255,255,.2)}
+    .band{
+      width:100%;
+      height:100%;
+      display:flex;
+      align-items:center;
+      background:var(--band-bg);
+      color:var(--text-color);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+      overflow:hidden;
+    }
 
-    .label{flex:0 0 auto;display:flex;align-items:center;justify-content:center;padding:0 18px;min-width:220px;background:var(--label-bg);color:var(--label-color);
-      font-weight:900;letter-spacing:.6px;text-transform:uppercase;white-space:nowrap;font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
-      font-size:clamp(14px, 2.4vw, 40px);text-shadow:0 2px 4px rgba(0,0,0,.65), 0 0 10px rgba(0,0,0,.35)}
+    .label{
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      background:var(--label-bg);
+      color:var(--label-color);
+      font-weight:800;
+      padding:.8em 1.2em;
+      margin:0 1rem;
+      white-space:nowrap;
+      user-select:none;
+      flex-shrink:0;
+      height:100%; /* full height */
+    }
+    .label span{
+      line-height:1.1;
+      font-size: 1.7em; /* enlarged */
+    }
+    .label .jp{
+      font-weight:900;
+    }
 
-    .viewport{position:relative;flex:1 1 auto;overflow:hidden;display:flex;flex-direction:column;gap:var(--line-gap);padding:0}
+    .textBlock{
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      overflow:hidden;
+      width:100%;
+    }
 
-    /* 行別の上下マージン（% は枠高に対する割合） */
-    #row-en{padding-top:15%; padding-bottom:5%;}
-    #row-ja{padding-top:5%;  padding-bottom:15%;}
+    .line{position:relative;overflow:hidden;width:100%;}
 
-    .row{position:relative;flex:1 1 0;overflow:hidden}
+    .text{font-size: clamp(var(--font-min), var(--font-dyn), var(--font-max));font-weight:700;line-height:1.15;white-space:nowrap;}
+    .scroller{display:inline-flex;will-change: transform;}
+    .item{ display:inline; white-space:nowrap; padding-right:2ch; }
+    .separator::after{ content:" • "; opacity:.6; }
 
-    .line{position:absolute;white-space:nowrap;will-change:transform;display:inline-flex;align-items:center;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
-      font-size:clamp(var(--font-min), var(--content-font), var(--font-max)); line-height:1.18; font-weight:900;
-      text-shadow:0 2px 4px rgba(0,0,0,.7), 0 0 10px rgba(0,0,0,.4)}
+    .static .scroller{ transform: translate3d(0,0,0) !important; }
+    @keyframes marquee{0%{ transform: translate3d(0,0,0);}100%{ transform: translate3d(var(--distance, -1000px), 0, 0);} }
 
-    .hidden{display:none}
-
-    @keyframes marquee { 0%{transform:translateX(0)} 100%{transform:translateX(var(--to-x))} }
+    .emergency .label{animation: blink 1s steps(2, jump-none) infinite;box-shadow: 0 0 .9em rgba(255,0,0,.7);}
+    @keyframes blink{50%{visibility:hidden;}}
   </style>
 </head>
 <body>
   <div class="band" id="band">
-    <div class="label" id="label">UPDATES / 最新情報</div>
-    <div class="viewport" id="viewport">
-      <!-- 上段 EN -->
-      <div class="row" id="row-en">
-        <div id="enA" class="line"></div>
-        <div id="enB" class="line"></div>
-        <div id="enS" class="line hidden"></div>
-      </div>
-      <!-- 下段 JA -->
-      <div class="row" id="row-ja">
-        <div id="jaA" class="line"></div>
-        <div id="jaB" class="line"></div>
-        <div id="jaS" class="line hidden"></div>
-      </div>
+    <div class="label">
+      <span>UPDATES</span>
+      <span class="jp">最新情報</span>
+    </div>
+    <div class="textBlock">
+      <div class="line en"><div class="scroller text" id="enText"></div></div>
+      <div class="line ja"><div class="scroller text" id="jaText"></div></div>
     </div>
   </div>
 
   <script>
-    const CONFIG = {
-      skiareaId: 379,
-      apiBase: 'https://web-api.yukiyama.biz/web-api/news/backward',
-      limit: 1,
-      enLang: 'en',
-      jaLang: 'ja',
-      speedPPS: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--speed-pps')) || 150,
-      pauseSec: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pause-sec')) || 0.8,
-      refreshSec: 60,
-      fallbackEN: 'Service disruption due to severe weather and gondola adjustment. Tickets remain valid on other operating days in 2025. For refunds, please contact us.',
-      fallbackJA: '悪天候およびゴンドラ調整のため本日の営業を中止します。チケットは2025年シーズン営業日に振替可能です。返金希望の方はご連絡ください。',
-    };
+  (()=>{
+    const $ = s => document.querySelector(s);
+    const band = $("#band");
+    const enText = $("#enText");
+    const jaText = $("#jaText");
 
-    const els = {
-      band: document.getElementById('band'),
-      label: document.getElementById('label'),
-      rows: {
-        en: { row: document.getElementById('row-en'), A: document.getElementById('enA'), B: document.getElementById('enB'), S: document.getElementById('enS') },
-        ja: { row: document.getElementById('row-ja'), A: document.getElementById('jaA'), B: document.getElementById('jaB'), S: document.getElementById('jaS') },
-      },
-    };
+    const params = new URLSearchParams(location.search);
+    const facility = +(params.get("facility") || 379);
+    const limit = Math.max(1, +(params.get("limit") || 10));
+    const speed = +(params.get("speed") || cssNumber("--speed-pps") || 150);
+    const updSec = +(params.get("interval") || cssNumber("--update-interval-sec") || 60);
+    const threshold = +(params.get("threshold") || cssNumber("--scroll-threshold") || 0.96);
+    const gapPx = +(params.get("gap") || cssNumber("--gap-px") || 80);
+    const emergency = ["1","true","on","yes"].includes(String(params.get("emergency")).toLowerCase());
 
-    // ===== フォント：ラベルの1.5倍に自動設定
-    function updateContentFontFromLabel(){
-      const fs = parseFloat(getComputedStyle(els.label).fontSize) || 24;
-      const min = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--font-min')) || 18;
-      const max = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--font-max')) || 120;
-      const content = Math.min(Math.max(fs * 1.5, min), max);
-      document.documentElement.style.setProperty('--content-font', content + 'px');
+    if (emergency) band.classList.add("emergency");
+
+    function cssNumber(name){
+      const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      const n = parseFloat(v);
+      return isNaN(n) ? null : n;
     }
 
-    // レイアウト変化に追従
-    const ro = new ResizeObserver(()=>{ updateContentFontFromLabel(); relayoutCurrent(); });
-    ro.observe(els.band);
+    const API = "https://web-api.yukiyama.biz/web-api/news/backward";
 
-    // ===== API 取得
     async function fetchNews(lang){
-      const params = new URLSearchParams({ skiareaId: String(CONFIG.skiareaId) });
-      if (CONFIG.limit) params.set('limit', String(CONFIG.limit));
-      if (lang) params.set('lang', lang);
-      const url = `${CONFIG.apiBase}?${params.toString()}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error('HTTP '+res.status);
-      const data = await res.json();
-      const list = Array.isArray(data) ? data : (Object.keys(data).every(k=>/^\d+$/.test(k)) ? Object.keys(data).sort((a,b)=>a-b).map(k=>data[k]) : [data]);
-      return list[0] || null;
+      const url = new URL(API);
+      url.searchParams.set("skiareaId", facility);
+      url.searchParams.set("limit", limit);
+      url.searchParams.set("lang", lang);
+      const res = await fetch(url.toString(), { cache: "no-store" });
+      if(!res.ok) throw new Error("API " + res.status);
+      const json = await res.json();
+      const arr = Object.values(json)
+        .filter(x => x && (x.title || x.message))
+        .sort((a,b)=> new Date(b.time) - new Date(a.time));
+      return arr;
     }
 
-    function buildTexts(enItem, jaItem){
-      const en = `${enItem?.title || 'Notice'}: ${(enItem?.message || CONFIG.fallbackEN).replace(/\s+/g,' ').trim()}`;
-      const ja = `${jaItem?.title || 'お知らせ'}: ${(jaItem?.message || CONFIG.fallbackJA).replace(/\s+/g,' ').trim()}`;
-      return { en, ja };
+    function compose(items){
+      return items.map(it => {
+        const t = (it.title || "").trim();
+        const m = (it.message || "").trim();
+        const s = (t && m) ? t + " — " + m : (t || m);
+        return s.replace(/\s+/g," ").trim();
+      }).filter(Boolean);
     }
 
-    // ===== スクロール設定（各行独立・★同速）。開始同期のため一旦 pause して同時に run
-    const pendingStarts = [];
-    function setupLine(rowEls, text){
-      rowEls.A.textContent = text;
-      rowEls.B.textContent = text;
-      rowEls.S.textContent = '';
-      requestAnimationFrame(()=>{ requestAnimationFrame(()=>{
-        const vw = rowEls.row.clientWidth;
-        const total = measureWidth(rowEls.A);
-        if (total <= Math.max(1, Math.floor(vw * 0.96))){
-          rowEls.A.className = 'line hidden';
-          rowEls.B.className = 'line hidden';
-          rowEls.S.className = 'line';
-          rowEls.S.style.transform = 'translateX(0)';
-          rowEls.S.style.animation = 'none';
-          rowEls.S.textContent = text;
-          return;
-        }
-        rowEls.A.className = 'line';
-        rowEls.B.className = 'line';
-        rowEls.S.className = 'line hidden';
-        const distance = total + vw;
-        const dur = distance / CONFIG.speedPPS; // px/s 共通
-        document.documentElement.style.setProperty('--to-x', `-${distance}px`);
-        const keyframes = `marquee ${dur}s linear infinite`;
-        rowEls.A.style.left = `${vw}px`;
-        rowEls.B.style.left = `${vw + total}px`;
-        rowEls.A.style.animation = keyframes;
-        rowEls.B.style.animation = keyframes;
-        // ★ 同期開始のため pause にしてキューへ
-        rowEls.A.style.animationPlayState = 'paused';
-        rowEls.B.style.animationPlayState = 'paused';
-        pendingStarts.push(rowEls.A, rowEls.B);
-      }); });
+    function renderLine(container, parts){
+      container.innerHTML = "";
+      const buildSet = () => {
+        const frag = document.createDocumentFragment();
+        parts.forEach((p,i)=>{
+          const span = document.createElement("span");
+          span.className = "item" + (i < parts.length-1 ? " separator" : "");
+          span.innerText = p;
+          frag.appendChild(span);
+        });
+        return frag;
+      };
+      container.appendChild(buildSet());
+      container.appendChild(buildSet());
     }
 
-    function runPendingStarts(){
-      // 次フレームで同時に start
-      requestAnimationFrame(()=>{
-        pendingStarts.forEach(n=> n.style.animationPlayState = 'running');
-        pendingStarts.length = 0;
-      });
-    }
+    function setupMarquee(trackEl){
+      const wrap = trackEl.parentElement;
+      const children = Array.from(trackEl.children);
+      const half = children.length / 2;
+      let contentWidth = 0;
+      for(let i=0; i<half; i++){
+        const r = children[i].getBoundingClientRect();
+        contentWidth += r.width;
+      }
+      const distance = -(contentWidth + gapPx);
+      trackEl.style.setProperty("--distance", distance + "px");
 
-    function relayoutCurrent(){
-      const enText = currentText(els.rows.en);
-      const jaText = currentText(els.rows.ja);
-      if (enText) setupLine(els.rows.en, enText);
-      if (jaText) setupLine(els.rows.ja, jaText);
-      runPendingStarts();
-    }
+      const wrapW = wrap.getBoundingClientRect().width;
+      const needScroll = contentWidth > wrapW * threshold;
 
-    function currentText(rowEls){
-      return (rowEls.S.textContent || rowEls.A.textContent || '').trim();
-    }
+      trackEl.style.animation = "none";
+      wrap.classList.remove("static");
+      void trackEl.offsetWidth;
 
-    function measureWidth(el){
-      const r = el.getBoundingClientRect();
-      return Math.ceil(r.width || 0);
-    }
-
-    async function load(){
-      try{
-        const [enItem, jaItem] = await Promise.all([
-          fetchNews(CONFIG.enLang).catch(()=>null),
-          fetchNews(CONFIG.jaLang).catch(()=>null)
-        ]);
-        const t = buildTexts(enItem, jaItem);
-        updateContentFontFromLabel();
-        setupLine(els.rows.en, t.en); // 上段 EN
-        setupLine(els.rows.ja, t.ja); // 下段 JA
-        runPendingStarts();           // ★ 英日同時スタート
-      }catch(e){
-        console.error(e);
-        updateContentFontFromLabel();
-        setupLine(els.rows.en, CONFIG.fallbackEN);
-        setupLine(els.rows.ja, CONFIG.fallbackJA);
-        runPendingStarts();
+      if(!needScroll){
+        wrap.classList.add("static");
+        trackEl.style.transform = "translate3d(0,0,0)";
+      }else{
+        const duration = Math.abs(distance) / speed;
+        trackEl.style.animation = `marquee ${duration}s linear infinite`;
       }
     }
 
-    // 初期化
-    updateContentFontFromLabel();
-    load();
-    setInterval(load, CONFIG.refreshSec * 1000);
+    async function refresh(){
+      try{
+        const [en, ja] = await Promise.all([
+          fetchNews("en").catch(()=>[]),
+          fetchNews("ja").catch(()=>[])
+        ]);
+        const enParts = compose(en.length ? en : ja);
+        const jaParts = compose(ja.length ? ja : en);
+
+        renderLine(enText, enParts);
+        renderLine(jaText, jaParts);
+
+        requestAnimationFrame(()=>{
+          setupMarquee(enText);
+          setupMarquee(jaText);
+        });
+      }catch(err){
+        console.error(err);
+        renderLine(enText, ["No updates available at this time."]);
+        renderLine(jaText, ["現在、お知らせはありません。"]);
+        requestAnimationFrame(()=>{
+          setupMarquee(enText);
+          setupMarquee(jaText);
+        });
+      }
+    }
+
+    let ro;
+    function watchResize(){
+      if (ro) ro.disconnect();
+      ro = new ResizeObserver(()=>{
+        setupMarquee(enText);
+        setupMarquee(jaText);
+      });
+      ro.observe($("#band"));
+      ro.observe(enText.parentElement);
+      ro.observe(jaText.parentElement);
+      window.addEventListener("orientationchange", ()=>{
+        setupMarquee(enText);
+        setupMarquee(jaText);
+      });
+    }
+
+    refresh();
+    watchResize();
+    setInterval(refresh, updSec * 1000);
+  })();
   </script>
 </body>
 </html>
