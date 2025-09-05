@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Emergency Ticker | Yukiyama News</title>
+  <style>
+    :root{
+      /* ===== 可変パラメータ（必要に応じて調整） ===== */
+      --band-height: 14vh;             /* テロップ帯の高さ（例：14%） */
+      --band-bg: #000;                 /* 背景色（屋外視認用：黒） */
+      --text-color: #fff;              /* 文字色（白） */
+      --label-bg: #c40000;             /* 左ラベルの背景（緊急：赤） */
+      --label-color: #fff;             /* 左ラベルの文字色 */
+      --font-scale-fhd: 40px;          /* 1920x1080 目安の基準サイズ */
+      --font-scale-uhd: 72px;          /* 3840x2160 目安の基準サイズ */
+      --letter-spacing: .5px;          /* 文字間 */
+      --gap: 64px;                     /* EN と JA の間のギャップ */
+      --speed-pps: 120;                /* px / 秒（スクロール速度の目安）*/
+      --pause-sec: 1.2;                /* ループ毎のポーズ秒数 */
+    }
+
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:#111}
+
+    /* 全画面ベース（サイネージ全画面用） */
+    .stage{position:fixed;inset:0;background:#111;display:flex;align-items:flex-end;}
+
+    /* テロップ帯 */
+    .band{position:relative;width:100%;height:var(--band-height);background:var(--band-bg);color:var(--text-color);display:flex;overflow:hidden;border-top:4px solid #333}
+
+    /* 左側の固定ラベル */
+    .label{flex:0 0 auto;display:flex;align-items:center;justify-content:center;padding:0 28px;background:var(--label-bg);color:var(--label-color);font-weight:800;letter-spacing:1px;text-transform:uppercase;}
+
+    /* フォントスケール：4K か FHD かで自動推定（粗めのロジック） */
+    .label, .content{font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;}
+    .label{font-size:clamp(24px, 2.2vw, 44px)}
+
+    .viewport{position:relative;flex:1 1 auto;overflow:hidden}
+
+    .content{position:absolute;white-space:nowrap;will-change:transform;display:flex;align-items:center;gap:var(--gap);}
+    .chunk{display:inline-flex;align-items:center}
+    .chunk b{font-weight:800;margin-right:.4em}
+
+    /* テキストサイズ：ビューポート基準（FHD/4K両対応） */
+    .content{font-size:clamp(var(--font-scale-fhd), 3.6vw, var(--font-scale-uhd)); line-height:1.2; letter-spacing:var(--letter-spacing)}
+
+    /* 安全面：影で視認性を上げる */
+    .content, .label{text-shadow: 0 2px 4px rgba(0,0,0,.6), 0 0 10px rgba(0,0,0,.35)}
+
+    /* アラート用の点滅（任意でON） */
+    .pulse {animation: pulse 1.5s ease-in-out infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+
+    /* スクロール用キー フレーム（durationはJSで計算して設定） */
+    @keyframes marquee {
+      0%   { transform: translateX(0); }
+      100% { transform: translateX(var(--to-x)); }
+    }
+
+    .hidden{display:none}
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="band">
+      <div class="label pulse">UPDATES<br>最新情報</div>
+      <div class="viewport">
+        <!-- 実際に動くバッファは JS が生成し、2つ複製して無限ループ -->
+        <div id="bufA" class="content"></div>
+        <div id="bufB" class="content"></div>
+        <div id="staticFit" class="content hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /** =====================
+     *  設定
+     * ===================== */
+    const CONFIG = {
+      skiareaId: 379,           // 必須：対象スキー場ID
+      apiBase: 'https://web-api.yukiyama.biz/web-api/news/backward',
+      limit: 1,               // 最新1件を取得
+      enLang: 'en',
+      jaLang: 'ja',
+      speedPPS: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--speed-pps')) || 120,
+      pauseSec: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pause-sec')) || 1.0,
+      fallbackEN: 'Service disruption due to severe weather and gondola adjustment. Tickets remain valid on other operating days in 2025. For refunds, please contact us.',
+      fallbackJA: '悪天候およびゴンドラ調整のため本日の営業を中止します。チケットは2025年シーズン営業日に振替可能です。返金希望の方はご連絡ください。',
+    };
+
+    const els = {
+      bufA: document.getElementById('bufA'),
+      bufB: document.getElementById('bufB'),
+      staticFit: document.getElementById('staticFit'),
+      viewport: null,
+    };
+    els.viewport = els.bufA.parentElement;
+
+    /**
+     * API から同一 ID の EN/JA を取得
+     */
+    async function fetchNewsByLang(lang){
+      const params = new URLSearchParams({ skiareaId: String(CONFIG.skiareaId) });
+      if (CONFIG.limit) params.set('limit', String(CONFIG.limit));
+      if (lang) params.set('lang', lang);
+      const url = `${CONFIG.apiBase}?${params.toString()}`;
+      const res = await fetch(url, { method:'GET' });
+      if (!res.ok) throw new Error('HTTP '+res.status);
+      const data = await res.json();
+      // {"0": {...}} 形式にも配慮
+      const list = Array.isArray(data) ? data : (Object.keys(data).every(k=>/^\d+$/.test(k)) ? Object.keys(data).sort((a,b)=>a-b).map(k=>data[k]) : [data]);
+      return list[0] || null;
+    }
+
+    /**
+     * EN→JA の順に 1 本のテロップ文へ
+     */
+    function buildTickerText(enItem, jaItem){
+      const enTitle = enItem?.title || 'Notice';
+      const enMsg   = (enItem?.message || CONFIG.fallbackEN).replace(/\s+/g,' ').trim();
+      const jaTitle = jaItem?.title || 'お知らせ';
+      const jaMsg   = (jaItem?.message || CONFIG.fallbackJA).replace(/\s+/g,' ').trim();
+      return {
+        en: `${enTitle}: ${enMsg}`,
+        ja: `${jaTitle}: ${jaMsg}`,
+      };
+    }
+
+    /**
+     * DOMに流し込む（2倍配置で無限ループ）
+     */
+    function mountContent(enText, jaText){
+      const gap = getComputedStyle(document.documentElement).getPropertyValue('--gap') || '64px';
+
+      // 英日 1 セット
+      const makeChunk = () => {
+        const wrap = document.createElement('div');
+        wrap.className = 'chunk';
+        const en = document.createElement('span');
+        en.innerHTML = `<b>EN</b> ${escapeHTML(enText)}`;
+        const sep = document.createElement('span');
+        sep.style.width = gap;
+        const ja = document.createElement('span');
+        ja.innerHTML = `<b>JA</b> ${escapeHTML(jaText)}`;
+        wrap.append(en, sep, ja);
+        return wrap;
+      };
+
+      // クリア
+      els.bufA.innerHTML = '';
+      els.bufB.innerHTML = '';
+      els.staticFit.innerHTML = '';
+
+      // A/B 両方に同じ 1 セットずつ入れる
+      els.bufA.appendChild(makeChunk());
+      els.bufB.appendChild(makeChunk());
+
+      // 初期配置：A は右端の外側から、B はさらに A の後ろに続く位置から
+      const totalWidth = measureContentWidth(els.bufA);
+
+      // ビューポートに収まるなら静止表示に切替
+      const vw = els.viewport.clientWidth;
+      if (totalWidth <= vw * 0.92){
+        els.bufA.style.animation = els.bufB.style.animation = 'none';
+        els.bufA.style.transform = els.bufB.style.transform = 'translateX(0)';
+        els.bufA.classList.add('hidden');
+        els.bufB.classList.add('hidden');
+        els.staticFit.classList.remove('hidden');
+        els.staticFit.textContent = `EN ${enText}    ｜    JA ${jaText}`;
+        return;
+      }
+
+      // スクロール距離（A が完全に左へ抜けるまで）
+      const distance = totalWidth + vw; // 右外→左外
+      const dur = distance / CONFIG.speedPPS; // 秒
+
+      // CSS カスタムプロパティで 1 ループ距離を渡す
+      document.documentElement.style.setProperty('--to-x', `-${distance}px`);
+
+      // A を 0→-distance、B は A の右外（= +vw）から同じ速度で追従
+      // 2 本を時間差で開始し、継ぎ目なくループ
+      const keyframes = `marquee ${dur}s linear infinite`;
+      els.bufA.style.left = `${vw}px`;          // 右外から
+      els.bufB.style.left = `${vw + totalWidth}px`; // A の直後
+
+      // ポーズを入れたい場合は animation-iteration のたびに一時停止（簡易）
+      els.bufA.style.animation = keyframes;
+      els.bufB.style.animation = keyframes;
+
+      if (CONFIG.pauseSec > 0){
+        // CSSだけで精密ポーズは難しいので、周期で一時停止する処理
+        setupLoopPause([els.bufA, els.bufB], dur, CONFIG.pauseSec);
+      }
+    }
+
+    function setupLoopPause(nodes, duration, pause){
+      nodes.forEach((n)=>{
+        let acc = 0; let playing = true; let last = performance.now();
+        const tick = (t)=>{
+          const dt = (t - last)/1000; last = t; if (playing){acc += dt;}
+          if (acc >= duration){ // 1 ループ分経過
+            acc = 0; playing = false; const prev = n.style.animationPlayState; n.style.animationPlayState = 'paused';
+            setTimeout(()=>{ playing = true; n.style.animationPlayState = prev || 'running'; }, pause*1000);
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+    }
+
+    function measureContentWidth(el){
+      // レイアウト確定後の実幅
+      const rect = el.getBoundingClientRect();
+      return Math.ceil(rect.width || 0);
+    }
+
+    function escapeHTML(str){
+      return String(str)
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;')
+        .replace(/'/g,'&#039;');
+    }
+
+    async function loadAndRender(){
+      try{
+        const [en, ja] = await Promise.all([
+          fetchNewsByLang(CONFIG.enLang).catch(()=>null),
+          fetchNewsByLang(CONFIG.jaLang).catch(()=>null),
+        ]);
+
+        // ID が一致していれば同一告知とみなす。そうでなければ最新同士を連結
+        const text = buildTickerText(en, ja);
+        mountContent(text.en, text.ja);
+      }catch(err){
+        console.error(err);
+        // フォールバック文で動かす
+        mountContent(CONFIG.fallbackEN, CONFIG.fallbackJA);
+      }
+    }
+
+    // 初回 + 定期リフレッシュ（例：60秒毎）
+    loadAndRender();
+    setInterval(loadAndRender, 60 * 1000);
+
+    // 回転・サイズ変更時も再計測
+    window.addEventListener('resize', ()=>{
+      // 直近テキストで再レイアウト
+      const currentEN = (els.staticFit.textContent || els.bufA.textContent || '').replace(/^EN\s*/,'').split('｜')[0].trim();
+      const currentJA = (els.staticFit.textContent || '').split('｜').slice(1).join('｜').replace(/^\s*JA\s*/,'').trim();
+      if (currentEN && currentJA){
+        mountContent(currentEN, currentJA);
+      } else {
+        loadAndRender();
+      }
+    });
+  </script>
+</body>
+</html>
