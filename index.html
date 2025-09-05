@@ -41,15 +41,15 @@
       color:var(--label-color);
       font-weight:800;
       padding:.8em 1.2em;
-      margin:0 1rem;
       white-space:nowrap;
       user-select:none;
       flex-shrink:0;
       height:100%;
-      border:none; /* remove any border */
+      border:none; /* remove border */
+      margin:0; /* remove black gap */
     }
     .label span{
-      line-height:1.4; /* more spacing between EN and JP */
+      line-height:1.4;
       font-size: 2.5em; /* 160% */
     }
     .label .jp{
@@ -63,6 +63,7 @@
       overflow:hidden;
       width:100%;
       gap:25%;
+      margin-left:1rem; /* add spacing after label instead of black edge */
     }
 
     .line{position:relative;overflow:hidden;width:100%;}
