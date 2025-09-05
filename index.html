@@ -3,54 +3,61 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Emergency Ticker | Yukiyama News</title>
+  <title>Emergency Ticker | EN top / JA bottom</title>
   <style>
     :root{
       --band-bg: #000;
       --text-color: #fff;
       --label-bg: #c40000;
       --label-color: #fff;
-      --font-min: 20px;
-      --font-max: 56px;
-      --letter-spacing: .5px;
-      --speed-pps: 120;
-      --pause-sec: 1.2;
+      --line-gap: 4px;
+      --speed-pps: 120;   /* ★ 両行で同じ px/s */
+      --pause-sec: 0.8;
+      --font-min: 16px;
+      --font-max: 72px;
+      --font-dyn: 28px;
     }
 
     *{box-sizing:border-box}
-    html,body{margin:0;padding:0;background:transparent}
+    html,body{height:100%;margin:0;background:transparent}
 
-    .band{position:relative;width:100%;height:100%;background:var(--band-bg);color:var(--text-color);display:flex;overflow:hidden;}
-
-    .label{flex:0 0 auto;display:flex;align-items:center;justify-content:center;padding:0 20px;background:var(--label-bg);color:var(--label-color);font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:clamp(14px,2.2vw,32px);}
-
-    .viewport{position:relative;flex:1 1 auto;overflow:hidden;display:flex;align-items:center;padding:10% 0;}
-
-    .content{position:absolute;white-space:nowrap;will-change:transform;display:block;font-size:clamp(var(--font-min), 3vw, var(--font-max));line-height:1.3;letter-spacing:var(--letter-spacing)}
-
-    .chunk{display:block}
-    .line{display:block}
-
-    .content, .label{text-shadow: 0 2px 4px rgba(0,0,0,.6), 0 0 10px rgba(0,0,0,.35)}
-
-    .pulse {animation: pulse 1.5s ease-in-out infinite}
-    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
-
-    @keyframes marquee {
-      0%   { transform: translateX(0); }
-      100% { transform: translateX(var(--to-x)); }
+    .band{width:100%;height:100%;display:flex;overflow:hidden;background:var(--band-bg);color:var(--text-color)}
+    .label{flex:0 0 auto;display:flex;align-items:center;justify-content:center;padding:0 16px;min-width:200px;
+      background:var(--label-bg);color:var(--label-color);font-weight:800;letter-spacing:.5px;text-transform:uppercase;
+      white-space:nowrap;font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+      font-size:clamp(14px,2.2vw,34px);text-shadow:0 2px 4px rgba(0,0,0,.6)
+    }
+    .viewport{position:relative;flex:1 1 auto;overflow:hidden;display:flex;flex-direction:column;gap:var(--line-gap);
+      padding-top:3%;padding-bottom:3%;
     }
 
+    .row{position:relative;flex:1 1 0;overflow:hidden}
+    .line{position:absolute;white-space:nowrap;will-change:transform;display:inline-flex;align-items:center;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+      font-size:clamp(var(--font-min), var(--font-dyn), var(--font-max)); line-height:1.16;
+      text-shadow:0 2px 4px rgba(0,0,0,.6), 0 0 10px rgba(0,0,0,.35)
+    }
     .hidden{display:none}
+
+    @keyframes marquee { 0%{transform:translateX(0)} 100%{transform:translateX(var(--to-x))} }
   </style>
 </head>
 <body>
-  <div class="band">
-    <div class="label pulse">UPDATES<br>最新情報</div>
-    <div class="viewport">
-      <div id="bufA" class="content"></div>
-      <div id="bufB" class="content"></div>
-      <div id="staticFit" class="content hidden"></div>
+  <div class="band" id="band">
+    <div class="label">UPDATES / 最新情報</div>
+    <div class="viewport" id="viewport">
+      <!-- 上段 EN -->
+      <div class="row" id="row-en">
+        <div id="enA" class="line"></div>
+        <div id="enB" class="line"></div>
+        <div id="enS" class="line hidden"></div>
+      </div>
+      <!-- 下段 JA -->
+      <div class="row" id="row-ja">
+        <div id="jaA" class="line"></div>
+        <div id="jaB" class="line"></div>
+        <div id="jaS" class="line hidden"></div>
+      </div>
     </div>
   </div>
 
@@ -62,113 +69,142 @@
       enLang: 'en',
       jaLang: 'ja',
       speedPPS: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--speed-pps')) || 120,
-      pauseSec: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pause-sec')) || 1.0,
+      pauseSec: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pause-sec')) || 0.8,
+      fontRatio: 0.42,   // 2行用フォント倍率
+      refreshSec: 60,
       fallbackEN: 'Service disruption due to severe weather and gondola adjustment. Tickets remain valid on other operating days in 2025. For refunds, please contact us.',
       fallbackJA: '悪天候およびゴンドラ調整のため本日の営業を中止します。チケットは2025年シーズン営業日に振替可能です。返金希望の方はご連絡ください。',
     };
 
     const els = {
-      bufA: document.getElementById('bufA'),
-      bufB: document.getElementById('bufB'),
-      staticFit: document.getElementById('staticFit'),
-      viewport: null,
+      band: document.getElementById('band'),
+      rows: {
+        en: { row: document.getElementById('row-en'), A: document.getElementById('enA'), B: document.getElementById('enB'), S: document.getElementById('enS') },
+        ja: { row: document.getElementById('row-ja'), A: document.getElementById('jaA'), B: document.getElementById('jaB'), S: document.getElementById('jaS') },
+      },
     };
-    els.viewport = els.bufA.parentElement;
 
-    async function fetchNewsByLang(lang){
+    // 帯の高さに応じフォント自動調整
+    function updateDynamicFont(){
+      const h = els.band.clientHeight || 0;
+      const size = Math.max(12, Math.min(140, Math.round(h * CONFIG.fontRatio)));
+      document.documentElement.style.setProperty('--font-dyn', size + 'px');
+    }
+    new ResizeObserver(()=>{ updateDynamicFont(); relayoutCurrent(); }).observe(els.band);
+
+    // API取得
+    async function fetchNews(lang){
       const params = new URLSearchParams({ skiareaId: String(CONFIG.skiareaId) });
       if (CONFIG.limit) params.set('limit', String(CONFIG.limit));
       if (lang) params.set('lang', lang);
       const url = `${CONFIG.apiBase}?${params.toString()}`;
-      const res = await fetch(url, { method:'GET' });
+      const res = await fetch(url);
       if (!res.ok) throw new Error('HTTP '+res.status);
       const data = await res.json();
-      const list = Array.isArray(data) ? data : (Object.keys(data).every(k=>/^\d+$/.test(k)) ? Object.keys(data).sort((a,b)=>a-b).map(k=>data[k]) : [data]);
+      const list = Array.isArray(data) ? data : (Object.keys(data).every(k=>/^\\d+$/.test(k)) ? Object.keys(data).sort((a,b)=>a-b).map(k=>data[k]) : [data]);
       return list[0] || null;
     }
 
-    function buildTickerText(enItem, jaItem){
-      const enTitle = enItem?.title || 'Notice';
-      const enMsg   = (enItem?.message || CONFIG.fallbackEN).replace(/\s+/g,' ').trim();
-      const jaTitle = jaItem?.title || 'お知らせ';
-      const jaMsg   = (jaItem?.message || CONFIG.fallbackJA).replace(/\s+/g,' ').trim();
-      return { en: `${enTitle}: ${enMsg}`, ja: `${jaTitle}: ${jaMsg}` };
+    function buildTexts(enItem, jaItem){
+      const en = `${enItem?.title || 'Notice'}: ${(enItem?.message || CONFIG.fallbackEN).replace(/\\s+/g,' ').trim()}`;
+      const ja = `${jaItem?.title || 'お知らせ'}: ${(jaItem?.message || CONFIG.fallbackJA).replace(/\\s+/g,' ').trim()}`;
+      return { en, ja };
     }
 
-    function mountContent(enText, jaText){
-      const makeChunk = () => {
-        const wrap = document.createElement('div');
-        wrap.className = 'chunk';
-        const enLine = document.createElement('div');
-        enLine.className = 'line';
-        enLine.textContent = `EN ${enText}`;
-        const jaLine = document.createElement('div');
-        jaLine.className = 'line';
-        jaLine.textContent = `JA ${jaText}`;
-        wrap.append(enLine, jaLine);
-        return wrap;
-      };
+    // 行セットアップ（各行独立・同一px/s）
+    function setupLine(rowEls, text){
+      rowEls.A.textContent = text;
+      rowEls.B.textContent = text;
+      rowEls.S.textContent = '';
 
-      els.bufA.innerHTML = els.bufB.innerHTML = els.staticFit.innerHTML = '';
-      els.bufA.appendChild(makeChunk());
-      els.bufB.appendChild(makeChunk());
+      // レイアウト確定後に計測
+      requestAnimationFrame(()=>{
+        requestAnimationFrame(()=>{
+          const vw = rowEls.row.clientWidth;
+          const total = measureWidth(rowEls.A);
 
-      const totalWidth = measureContentWidth(els.bufA);
-      const vw = els.viewport.clientWidth;
-      if (totalWidth <= vw * 0.92){
-        els.bufA.style.animation = els.bufB.style.animation = 'none';
-        els.bufA.style.transform = els.bufB.style.transform = 'translateX(0)';
-        els.bufA.classList.add('hidden');
-        els.bufB.classList.add('hidden');
-        els.staticFit.classList.remove('hidden');
-        els.staticFit.innerHTML = `<div class="line">EN ${enText}</div><div class="line">JA ${jaText}</div>`;
-        return;
-      }
-      const distance = totalWidth + vw;
-      const dur = distance / CONFIG.speedPPS;
-      document.documentElement.style.setProperty('--to-x', `-${distance}px`);
-      const keyframes = `marquee ${dur}s linear infinite`;
-      els.bufA.style.left = `${vw}px`;
-      els.bufB.style.left = `${vw + totalWidth}px`;
-      els.bufA.style.animation = els.bufB.style.animation = keyframes;
-      if (CONFIG.pauseSec > 0){ setupLoopPause([els.bufA, els.bufB], dur, CONFIG.pauseSec); }
+          if (total <= Math.max(1, Math.floor(vw * 0.96))){
+            // 静止表示
+            rowEls.A.className = 'line hidden';
+            rowEls.B.className = 'line hidden';
+            rowEls.S.className = 'line';
+            rowEls.S.style.transform = 'translateX(0)';
+            rowEls.S.style.animation = 'none';
+            rowEls.S.textContent = text;
+            return;
+          }
+
+          // スクロール表示（A/B で無限ループ）— ★速度は speedPPS を使用（英日で完全一致）
+          rowEls.A.className = 'line';
+          rowEls.B.className = 'line';
+          rowEls.S.className = 'line hidden';
+
+          const distance = total + vw;                 // 右外→左外
+          const dur = distance / CONFIG.speedPPS;      // px/秒を共通化
+          document.documentElement.style.setProperty('--to-x', `-${distance}px`);
+          const keyframes = `marquee ${dur}s linear infinite`;
+
+          rowEls.A.style.left = `${vw}px`;
+          rowEls.B.style.left = `${vw + total}px`;
+          rowEls.A.style.animation = keyframes;
+          rowEls.B.style.animation = keyframes;
+
+          if (CONFIG.pauseSec > 0){
+            loopPause([rowEls.A, rowEls.B], dur, CONFIG.pauseSec);
+          }
+        });
+      });
     }
 
-    function setupLoopPause(nodes, duration, pause){
+    function relayoutCurrent(){
+      const enText = currentText(els.rows.en);
+      const jaText = currentText(els.rows.ja);
+      if (enText) setupLine(els.rows.en, enText);
+      if (jaText) setupLine(els.rows.ja, jaText);
+    }
+
+    function currentText(rowEls){
+      return (rowEls.S.textContent || rowEls.A.textContent || '').trim();
+    }
+
+    function loopPause(nodes, duration, pause){
       nodes.forEach((n)=>{
         let acc = 0; let playing = true; let last = performance.now();
         const tick = (t)=>{
           const dt = (t - last)/1000; last = t; if (playing){acc += dt;}
-          if (acc >= duration){ acc = 0; playing = false; const prev = n.style.animationPlayState; n.style.animationPlayState = 'paused'; setTimeout(()=>{ playing = true; n.style.animationPlayState = prev || 'running'; }, pause*1000); }
+          if (acc >= duration){ acc = 0; playing = false; const prev = n.style.animationPlayState; n.style.animationPlayState = 'paused';
+            setTimeout(()=>{ playing = true; n.style.animationPlayState = prev || 'running'; }, pause*1000); }
           requestAnimationFrame(tick);
         };
         requestAnimationFrame(tick);
       });
     }
 
-    function measureContentWidth(el){
-      const rect = el.getBoundingClientRect();
-      return Math.ceil(rect.width || 0);
+    function measureWidth(el){
+      const r = el.getBoundingClientRect();
+      return Math.ceil(r.width || 0);
     }
 
-    async function loadAndRender(){
+    async function load(){
       try{
-        const [en, ja] = await Promise.all([
-          fetchNewsByLang(CONFIG.enLang).catch(()=>null),
-          fetchNewsByLang(CONFIG.jaLang).catch(()=>null),
+        const [enItem, jaItem] = await Promise.all([
+          fetchNews(CONFIG.enLang).catch(()=>null),
+          fetchNews(CONFIG.jaLang).catch(()=>null)
         ]);
-        const text = buildTickerText(en, ja);
-        mountContent(text.en, text.ja);
-      }catch(err){
-        console.error(err);
-        mountContent(CONFIG.fallbackEN, CONFIG.fallbackJA);
+        const t = buildTexts(enItem, jaItem);
+        setupLine(els.rows.en, t.en); // 上段 EN
+        setupLine(els.rows.ja, t.ja); // 下段 JA
+      }catch(e){
+        console.error(e);
+        setupLine(els.rows.en, CONFIG.fallbackEN);
+        setupLine(els.rows.ja, CONFIG.fallbackJA);
       }
     }
 
-    loadAndRender();
-    setInterval(loadAndRender, 60 * 1000);
-
-    window.addEventListener('resize', ()=>{ loadAndRender(); });
+    // 初期化
+    updateDynamicFont();
+    load();
+    setInterval(load, CONFIG.refreshSec * 1000);
   </script>
 </body>
 </html>
