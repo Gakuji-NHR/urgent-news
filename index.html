@@ -3,56 +3,54 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Emergency Ticker | Yukiyama News</title>
+  <title>Emergency Ticker | Yukiyama News (Embed)</title>
   <style>
     :root{
-      /* ===== 可変パラメータ（必要に応じて調整） ===== */
-      --band-height: 14vh;             /* テロップ帯の高さ（例：14%） */
-      --band-bg: #000;                 /* 背景色（屋外視認用：黒） */
-      --text-color: #fff;              /* 文字色（白） */
-      --label-bg: #c40000;             /* 左ラベルの背景（緊急：赤） */
-      --label-color: #fff;             /* 左ラベルの文字色 */
-      --font-scale-fhd: 40px;          /* 1920x1080 目安の基準サイズ */
-      --font-scale-uhd: 72px;          /* 3840x2160 目安の基準サイズ */
+      /* ===== 可変パラメータ ===== */
+      --band-bg: #000;                 /* 帯の背景色（必要に応じて透明にも可） */
+      --text-color: #fff;              /* 文字色 */
+      --label-bg: #c40000;             /* 左ラベル背景 */
+      --label-color: #fff;             /* 左ラベル文字色 */
       --letter-spacing: .5px;          /* 文字間 */
       --gap: 64px;                     /* EN と JA の間のギャップ */
-      --speed-pps: 120;                /* px / 秒（スクロール速度の目安）*/
+      --speed-pps: 120;                /* スクロール速度 px/s */
       --pause-sec: 1.2;                /* ループ毎のポーズ秒数 */
+      --font-min: 18px;                /* フォント下限 */
+      --font-max: 96px;                /* フォント上限（親の高さによって自動調整） */
+      --font-dyn: 28px;                /* JSで更新される動的フォントサイズ */
     }
 
     *{box-sizing:border-box}
-    html,body{height:100%;margin:0;background:#111}
+    html,body{height:100%;margin:0;background:transparent}
 
-    /* 全画面ベース（サイネージ全画面用） */
-    .stage{position:fixed;inset:0;background:#111;display:flex;align-items:flex-end;}
+    /* === 埋め込み用：親がサイズを決める。要素自身はその範囲にフィット === */
+    .ticker{width:100%;height:100%;display:flex;align-items:stretch;}
 
-    /* テロップ帯 */
-    .band{position:relative;width:100%;height:var(--band-height);background:var(--band-bg);color:var(--text-color);display:flex;overflow:hidden;border-top:4px solid #333}
+    /* テロップ帯（全領域を占有） */
+    .band{position:relative;width:100%;height:100%;background:var(--band-bg);color:var(--text-color);display:flex;overflow:hidden;border:0}
 
-    /* 左側の固定ラベル */
-    .label{flex:0 0 auto;display:flex;align-items:center;justify-content:center;padding:0 28px;background:var(--label-bg);color:var(--label-color);font-weight:800;letter-spacing:1px;text-transform:uppercase;}
+    /* 左側ラベル（必要なら改行なしにしても良い） */
+    .label{flex:0 0 auto;display:flex;align-items:center;justify-content:center;padding:0 24px;background:var(--label-bg);color:var(--label-color);font-weight:800;letter-spacing:1px;text-transform:uppercase;white-space:nowrap}
 
-    /* フォントスケール：4K か FHD かで自動推定（粗めのロジック） */
+    /* フォントは親要素の高さに基づきJSで --font-dyn を更新。clampで上下限を保証 */
     .label, .content{font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;}
-    .label{font-size:clamp(24px, 2.2vw, 44px)}
+    .label{font-size: clamp(var(--font-min), var(--font-dyn), var(--font-max));}
 
     .viewport{position:relative;flex:1 1 auto;overflow:hidden}
 
-    .content{position:absolute;white-space:nowrap;will-change:transform;display:flex;align-items:center;gap:var(--gap);}
+    .content{position:absolute;white-space:nowrap;will-change:transform;display:flex;align-items:center;gap:var(--gap);
+      font-size: clamp(calc(var(--font-min) * 0.95), var(--font-dyn), var(--font-max));
+      line-height:1.15; letter-spacing:var(--letter-spacing)}
+
     .chunk{display:inline-flex;align-items:center}
     .chunk b{font-weight:800;margin-right:.4em}
 
-    /* テキストサイズ：ビューポート基準（FHD/4K両対応） */
-    .content{font-size:clamp(var(--font-scale-fhd), 3.6vw, var(--font-scale-uhd)); line-height:1.2; letter-spacing:var(--letter-spacing)}
-
-    /* 安全面：影で視認性を上げる */
+    /* 視認性向上 */
     .content, .label{text-shadow: 0 2px 4px rgba(0,0,0,.6), 0 0 10px rgba(0,0,0,.35)}
 
-    /* アラート用の点滅（任意でON） */
     .pulse {animation: pulse 1.5s ease-in-out infinite}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
 
-    /* スクロール用キー フレーム（durationはJSで計算して設定） */
     @keyframes marquee {
       0%   { transform: translateX(0); }
       100% { transform: translateX(var(--to-x)); }
@@ -62,11 +60,11 @@
   </style>
 </head>
 <body>
-  <div class="stage">
-    <div class="band">
-      <div class="label pulse">UPDATES<br>最新情報</div>
-      <div class="viewport">
-        <!-- 実際に動くバッファは JS が生成し、2つ複製して無限ループ -->
+  <!-- 親CMSが好きなサイズでiframe/領域を与える前提。ここはその枠だけを描画 -->
+  <div class="ticker" id="ticker-root" aria-label="Emergency ticker">
+    <div class="band" id="band">
+      <div class="label pulse">UPDATES / 最新情報</div>
+      <div class="viewport" id="viewport">
         <div id="bufA" class="content"></div>
         <div id="bufB" class="content"></div>
         <div id="staticFit" class="content hidden"></div>
@@ -79,28 +77,44 @@
      *  設定
      * ===================== */
     const CONFIG = {
-      skiareaId: 379,           // 必須：対象スキー場ID
+      skiareaId: 379, // 対象スキー場ID（必要に応じてCMS側で書換）
       apiBase: 'https://web-api.yukiyama.biz/web-api/news/backward',
-      limit: 1,               // 最新1件を取得
+      limit: 1,
       enLang: 'en',
       jaLang: 'ja',
       speedPPS: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--speed-pps')) || 120,
       pauseSec: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pause-sec')) || 1.0,
       fallbackEN: 'Service disruption due to severe weather and gondola adjustment. Tickets remain valid on other operating days in 2025. For refunds, please contact us.',
       fallbackJA: '悪天候およびゴンドラ調整のため本日の営業を中止します。チケットは2025年シーズン営業日に振替可能です。返金希望の方はご連絡ください。',
+      refreshSec: 60, // 取得リフレッシュ間隔
+      fontRatio: 0.55, // 帯の高さに対するフォント倍率（例：0.55 * bandHeight）
     };
 
     const els = {
+      root: document.getElementById('ticker-root'),
+      band: document.getElementById('band'),
+      viewport: document.getElementById('viewport'),
       bufA: document.getElementById('bufA'),
       bufB: document.getElementById('bufB'),
       staticFit: document.getElementById('staticFit'),
-      viewport: null,
     };
-    els.viewport = els.bufA.parentElement;
 
     /**
-     * API から同一 ID の EN/JA を取得
+     * 親サイズに追従してフォントを自動調整
      */
+    function updateDynamicFont(){
+      const h = els.band.clientHeight || 0;
+      const size = Math.max(10, Math.min(200, Math.round(h * CONFIG.fontRatio)));
+      document.documentElement.style.setProperty('--font-dyn', size + 'px');
+    }
+
+    const ro = new ResizeObserver(()=>{
+      updateDynamicFont();
+      relayoutWithCurrentText();
+    });
+    ro.observe(els.band);
+
+    /** API 取得 */
     async function fetchNewsByLang(lang){
       const params = new URLSearchParams({ skiareaId: String(CONFIG.skiareaId) });
       if (CONFIG.limit) params.set('limit', String(CONFIG.limit));
@@ -109,32 +123,20 @@
       const res = await fetch(url, { method:'GET' });
       if (!res.ok) throw new Error('HTTP '+res.status);
       const data = await res.json();
-      // {"0": {...}} 形式にも配慮
       const list = Array.isArray(data) ? data : (Object.keys(data).every(k=>/^\d+$/.test(k)) ? Object.keys(data).sort((a,b)=>a-b).map(k=>data[k]) : [data]);
       return list[0] || null;
     }
 
-    /**
-     * EN→JA の順に 1 本のテロップ文へ
-     */
     function buildTickerText(enItem, jaItem){
       const enTitle = enItem?.title || 'Notice';
       const enMsg   = (enItem?.message || CONFIG.fallbackEN).replace(/\s+/g,' ').trim();
       const jaTitle = jaItem?.title || 'お知らせ';
       const jaMsg   = (jaItem?.message || CONFIG.fallbackJA).replace(/\s+/g,' ').trim();
-      return {
-        en: `${enTitle}: ${enMsg}`,
-        ja: `${jaTitle}: ${jaMsg}`,
-      };
+      return { en: `${enTitle}: ${enMsg}`, ja: `${jaTitle}: ${jaMsg}` };
     }
 
-    /**
-     * DOMに流し込む（2倍配置で無限ループ）
-     */
     function mountContent(enText, jaText){
       const gap = getComputedStyle(document.documentElement).getPropertyValue('--gap') || '64px';
-
-      // 英日 1 セット
       const makeChunk = () => {
         const wrap = document.createElement('div');
         wrap.className = 'chunk';
@@ -148,51 +150,72 @@
         return wrap;
       };
 
-      // クリア
       els.bufA.innerHTML = '';
       els.bufB.innerHTML = '';
       els.staticFit.innerHTML = '';
 
-      // A/B 両方に同じ 1 セットずつ入れる
       els.bufA.appendChild(makeChunk());
       els.bufB.appendChild(makeChunk());
 
-      // 初期配置：A は右端の外側から、B はさらに A の後ろに続く位置から
+      layoutRun();
+    }
+
+    function layoutRun(){
+      const vw = els.viewport.clientWidth;
       const totalWidth = measureContentWidth(els.bufA);
 
-      // ビューポートに収まるなら静止表示に切替
-      const vw = els.viewport.clientWidth;
       if (totalWidth <= vw * 0.92){
         els.bufA.style.animation = els.bufB.style.animation = 'none';
         els.bufA.style.transform = els.bufB.style.transform = 'translateX(0)';
         els.bufA.classList.add('hidden');
         els.bufB.classList.add('hidden');
         els.staticFit.classList.remove('hidden');
+        const { enText, jaText } = getCurrentTexts();
         els.staticFit.textContent = `EN ${enText}    ｜    JA ${jaText}`;
         return;
       }
 
-      // スクロール距離（A が完全に左へ抜けるまで）
-      const distance = totalWidth + vw; // 右外→左外
-      const dur = distance / CONFIG.speedPPS; // 秒
+      els.bufA.classList.remove('hidden');
+      els.bufB.classList.remove('hidden');
+      els.staticFit.classList.add('hidden');
 
-      // CSS カスタムプロパティで 1 ループ距離を渡す
+      const distance = totalWidth + vw;
+      const dur = distance / CONFIG.speedPPS;
       document.documentElement.style.setProperty('--to-x', `-${distance}px`);
-
-      // A を 0→-distance、B は A の右外（= +vw）から同じ速度で追従
-      // 2 本を時間差で開始し、継ぎ目なくループ
       const keyframes = `marquee ${dur}s linear infinite`;
-      els.bufA.style.left = `${vw}px`;          // 右外から
-      els.bufB.style.left = `${vw + totalWidth}px`; // A の直後
 
-      // ポーズを入れたい場合は animation-iteration のたびに一時停止（簡易）
+      els.bufA.style.left = `${vw}px`;
+      els.bufB.style.left = `${vw + totalWidth}px`;
       els.bufA.style.animation = keyframes;
       els.bufB.style.animation = keyframes;
 
       if (CONFIG.pauseSec > 0){
-        // CSSだけで精密ポーズは難しいので、周期で一時停止する処理
         setupLoopPause([els.bufA, els.bufB], dur, CONFIG.pauseSec);
       }
+    }
+
+    function getCurrentTexts(){
+      const spans = els.bufA.querySelectorAll('.chunk span');
+      const enSpan = spans[0];
+      const jaSpan = spans[2];
+      const enText = enSpan ? enSpan.textContent.replace(/^EN\s*/, '') : '';
+      const jaText = jaSpan ? jaSpan.textContent.replace(/^JA\s*/, '') : '';
+      return { enText, jaText };
+    }
+
+    function relayoutWithCurrentText(){
+      const { enText, jaText } = getCurrentTexts();
+      if (enText || jaText){
+        els.bufA.innerHTML = '';
+        els.bufB.innerHTML = '';
+        const gap = getComputedStyle(document.documentElement).getPropertyValue('--gap') || '64px';
+        const wrap = document.createElement('div');
+        wrap.className = 'chunk';
+        wrap.innerHTML = `<span><b>EN</b> ${escapeHTML(enText)}</span><span style="width:${gap}"></span><span><b>JA</b> ${escapeHTML(jaText)}</span>`;
+        els.bufA.appendChild(wrap.cloneNode(true));
+        els.bufB.appendChild(wrap);
+      }
+      layoutRun();
     }
 
     function setupLoopPause(nodes, duration, pause){
@@ -200,7 +223,7 @@
         let acc = 0; let playing = true; let last = performance.now();
         const tick = (t)=>{
           const dt = (t - last)/1000; last = t; if (playing){acc += dt;}
-          if (acc >= duration){ // 1 ループ分経過
+          if (acc >= duration){
             acc = 0; playing = false; const prev = n.style.animationPlayState; n.style.animationPlayState = 'paused';
             setTimeout(()=>{ playing = true; n.style.animationPlayState = prev || 'running'; }, pause*1000);
           }
@@ -211,7 +234,6 @@
     }
 
     function measureContentWidth(el){
-      // レイアウト確定後の実幅
       const rect = el.getBoundingClientRect();
       return Math.ceil(rect.width || 0);
     }
@@ -221,7 +243,7 @@
         .replace(/&/g,'&amp;')
         .replace(/</g,'&lt;')
         .replace(/>/g,'&gt;')
-        .replace(/"/g,'&quot;')
+        .replace(/\"/g,'&quot;')
         .replace(/'/g,'&#039;');
     }
 
@@ -231,32 +253,17 @@
           fetchNewsByLang(CONFIG.enLang).catch(()=>null),
           fetchNewsByLang(CONFIG.jaLang).catch(()=>null),
         ]);
-
-        // ID が一致していれば同一告知とみなす。そうでなければ最新同士を連結
         const text = buildTickerText(en, ja);
         mountContent(text.en, text.ja);
       }catch(err){
         console.error(err);
-        // フォールバック文で動かす
         mountContent(CONFIG.fallbackEN, CONFIG.fallbackJA);
       }
     }
 
-    // 初回 + 定期リフレッシュ（例：60秒毎）
+    updateDynamicFont();
     loadAndRender();
-    setInterval(loadAndRender, 60 * 1000);
-
-    // 回転・サイズ変更時も再計測
-    window.addEventListener('resize', ()=>{
-      // 直近テキストで再レイアウト
-      const currentEN = (els.staticFit.textContent || els.bufA.textContent || '').replace(/^EN\s*/,'').split('｜')[0].trim();
-      const currentJA = (els.staticFit.textContent || '').split('｜').slice(1).join('｜').replace(/^\s*JA\s*/,'').trim();
-      if (currentEN && currentJA){
-        mountContent(currentEN, currentJA);
-      } else {
-        loadAndRender();
-      }
-    });
+    setInterval(loadAndRender, CONFIG.refreshSec * 1000);
   </script>
 </body>
 </html>
