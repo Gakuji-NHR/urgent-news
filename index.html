@@ -3,61 +3,54 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Emergency Ticker | 2 Lines (EN over JA)</title>
+  <title>Emergency Ticker | Yukiyama News</title>
   <style>
     :root{
       --band-bg: #000;
       --text-color: #fff;
       --label-bg: #c40000;
       --label-color: #fff;
-      --gap-x: 48px;              /* 同一行内の区切り（今回は2段なので最小限） */
-      --line-gap: 4px;            /* EN と JA 行の間隔 */
-      --speed-pps: 120;           /* px/s */
-      --pause-sec: 0.8;           /* ループ毎のポーズ */
-      --font-min: 18px;           /* 下限 */
-      --font-max: 72px;           /* 上限 */
-      --font-dyn: 28px;           /* JSで更新（親高さ×比率） */
-      --line-height: 1.18;        /* 行の行高 */
-      --label-width: 220px;       /* 左ラベルの最小幅（可変） */
+      --font-min: 20px;
+      --font-max: 56px;
+      --letter-spacing: .5px;
+      --speed-pps: 120;
+      --pause-sec: 1.2;
     }
 
     *{box-sizing:border-box}
-    html,body{height:100%;margin:0;background:transparent}
+    html,body{margin:0;padding:0;background:transparent}
 
-    .band{width:100%;height:100%;display:flex;overflow:hidden;background:var(--band-bg);color:var(--text-color)}
+    .band{position:relative;width:100%;height:100%;background:var(--band-bg);color:var(--text-color);display:flex;overflow:hidden;}
 
-    .label{flex:0 0 auto;display:flex;align-items:center;justify-content:center;padding:0 16px;min-width:var(--label-width);background:var(--label-bg);color:var(--label-color);font-weight:800;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap;font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;font-size:clamp(14px,2.2vw,34px);text-shadow:0 2px 4px rgba(0,0,0,.6)}
+    .label{flex:0 0 auto;display:flex;align-items:center;justify-content:center;padding:0 20px;background:var(--label-bg);color:var(--label-color);font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:clamp(14px,2.2vw,32px);}
 
-    .viewport{position:relative;flex:1 1 auto;overflow:hidden;display:flex;flex-direction:column;justify-content:center;gap:var(--line-gap);padding-inline:10px}
+    .viewport{position:relative;flex:1 1 auto;overflow:hidden;display:flex;align-items:center;padding:10% 0;}
 
-    .row{position:relative;width:100%;height:48%;overflow:hidden;}
+    .content{position:absolute;white-space:nowrap;will-change:transform;display:block;font-size:clamp(var(--font-min), 3vw, var(--font-max));line-height:1.3;letter-spacing:var(--letter-spacing)}
 
-    .line{position:absolute;white-space:nowrap;will-change:transform;display:inline-flex;align-items:center;gap:var(--gap-x);font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;font-size:clamp(var(--font-min), var(--font-dyn), var(--font-max));line-height:var(--line-height);text-shadow:0 2px 4px rgba(0,0,0,.6), 0 0 10px rgba(0,0,0,.35)}
+    .chunk{display:block}
+    .line{display:block}
 
-    .hidden{display:none}
+    .content, .label{text-shadow: 0 2px 4px rgba(0,0,0,.6), 0 0 10px rgba(0,0,0,.35)}
+
+    .pulse {animation: pulse 1.5s ease-in-out infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
 
     @keyframes marquee {
       0%   { transform: translateX(0); }
       100% { transform: translateX(var(--to-x)); }
     }
+
+    .hidden{display:none}
   </style>
 </head>
 <body>
-  <div class="band" id="band">
-    <div class="label">UPDATES / 最新情報</div>
-    <div class="viewport" id="viewport">
-      <!-- 上段：EN -->
-      <div class="row" id="row-en">
-        <div id="enA" class="line"></div>
-        <div id="enB" class="line"></div>
-        <div id="enStatic" class="line hidden"></div>
-      </div>
-      <!-- 下段：JA -->
-      <div class="row" id="row-ja">
-        <div id="jaA" class="line"></div>
-        <div id="jaB" class="line"></div>
-        <div id="jaStatic" class="line hidden"></div>
-      </div>
+  <div class="band">
+    <div class="label pulse">UPDATES<br>最新情報</div>
+    <div class="viewport">
+      <div id="bufA" class="content"></div>
+      <div id="bufB" class="content"></div>
+      <div id="staticFit" class="content hidden"></div>
     </div>
   </div>
 
@@ -69,109 +62,79 @@
       enLang: 'en',
       jaLang: 'ja',
       speedPPS: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--speed-pps')) || 120,
-      pauseSec: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pause-sec')) || 0.8,
-      fontRatio: 0.42, // 親高さ×比率 → 行フォント（2段なのでやや小さめに）
+      pauseSec: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pause-sec')) || 1.0,
       fallbackEN: 'Service disruption due to severe weather and gondola adjustment. Tickets remain valid on other operating days in 2025. For refunds, please contact us.',
       fallbackJA: '悪天候およびゴンドラ調整のため本日の営業を中止します。チケットは2025年シーズン営業日に振替可能です。返金希望の方はご連絡ください。',
-      refreshSec: 60
     };
 
     const els = {
-      band: document.getElementById('band'),
-      viewport: document.getElementById('viewport'),
-      rows: {
-        en: { A: document.getElementById('enA'), B: document.getElementById('enB'), S: document.getElementById('enStatic'), row: document.getElementById('row-en') },
-        ja: { A: document.getElementById('jaA'), B: document.getElementById('jaB'), S: document.getElementById('jaStatic'), row: document.getElementById('row-ja') },
-      }
+      bufA: document.getElementById('bufA'),
+      bufB: document.getElementById('bufB'),
+      staticFit: document.getElementById('staticFit'),
+      viewport: null,
     };
+    els.viewport = els.bufA.parentElement;
 
-    // ====== フォント自動調整（親高さに追従）
-    function updateDynamicFont(){
-      const h = els.band.clientHeight || 0;
-      const size = Math.max(12, Math.min(140, Math.round(h * CONFIG.fontRatio)));
-      document.documentElement.style.setProperty('--font-dyn', size + 'px');
-    }
-    new ResizeObserver(()=>{ updateDynamicFont(); relayoutCurrent(); }).observe(els.band);
-
-    // ====== API utilities
-    async function fetchNews(lang){
+    async function fetchNewsByLang(lang){
       const params = new URLSearchParams({ skiareaId: String(CONFIG.skiareaId) });
       if (CONFIG.limit) params.set('limit', String(CONFIG.limit));
       if (lang) params.set('lang', lang);
       const url = `${CONFIG.apiBase}?${params.toString()}`;
-      const res = await fetch(url);
+      const res = await fetch(url, { method:'GET' });
       if (!res.ok) throw new Error('HTTP '+res.status);
       const data = await res.json();
       const list = Array.isArray(data) ? data : (Object.keys(data).every(k=>/^\d+$/.test(k)) ? Object.keys(data).sort((a,b)=>a-b).map(k=>data[k]) : [data]);
       return list[0] || null;
     }
 
-    function texts(enItem, jaItem){
-      const en = `${enItem?.title || 'Notice'}: ${(enItem?.message || CONFIG.fallbackEN).replace(/\s+/g,' ').trim()}`;
-      const ja = `${jaItem?.title || 'お知らせ'}: ${(jaItem?.message || CONFIG.fallbackJA).replace(/\s+/g,' ').trim()}`;
-      return { en, ja };
+    function buildTickerText(enItem, jaItem){
+      const enTitle = enItem?.title || 'Notice';
+      const enMsg   = (enItem?.message || CONFIG.fallbackEN).replace(/\s+/g,' ').trim();
+      const jaTitle = jaItem?.title || 'お知らせ';
+      const jaMsg   = (jaItem?.message || CONFIG.fallbackJA).replace(/\s+/g,' ').trim();
+      return { en: `${enTitle}: ${enMsg}`, ja: `${jaTitle}: ${jaMsg}` };
     }
 
-    // ====== レイアウト＆スクロール（各行独立）
-    function setupLine(rowEls, text){
-      // 内容注入（A/Bに同文、静止用Sは空）
-      rowEls.A.textContent = text;
-      rowEls.B.textContent = text;
-      rowEls.S.textContent = '';
+    function mountContent(enText, jaText){
+      const makeChunk = () => {
+        const wrap = document.createElement('div');
+        wrap.className = 'chunk';
+        const enLine = document.createElement('div');
+        enLine.className = 'line';
+        enLine.textContent = `EN ${enText}`;
+        const jaLine = document.createElement('div');
+        jaLine.className = 'line';
+        jaLine.textContent = `JA ${jaText}`;
+        wrap.append(enLine, jaLine);
+        return wrap;
+      };
 
-      // 初期配置を安定させるため、フレームをまたいでから計測
-      requestAnimationFrame(()=>{
-        requestAnimationFrame(()=>{
-          const vw = rowEls.row.clientWidth;
-          const total = measureWidth(rowEls.A);
+      els.bufA.innerHTML = els.bufB.innerHTML = els.staticFit.innerHTML = '';
+      els.bufA.appendChild(makeChunk());
+      els.bufB.appendChild(makeChunk());
 
-          if (total <= Math.max(1, Math.floor(vw * 0.96))){
-            // 静止表示
-            rowEls.A.classList.add('hidden');
-            rowEls.B.classList.add('hidden');
-            rowEls.S.classList.remove('hidden');
-            rowEls.S.style.transform = 'translateX(0)';
-            rowEls.S.style.animation = 'none';
-            rowEls.S.textContent = text;
-            return;
-          }
-
-          // スクロール設定
-          rowEls.A.classList.remove('hidden');
-          rowEls.B.classList.remove('hidden');
-          rowEls.S.classList.add('hidden');
-
-          const distance = total + vw; // 右外→左外
-          const dur = distance / CONFIG.speedPPS; // 秒
-          document.documentElement.style.setProperty('--to-x', `-${distance}px`);
-          const keyframes = `marquee ${dur}s linear infinite`;
-
-          rowEls.A.style.left = `${vw}px`;
-          rowEls.B.style.left = `${vw + total}px`;
-          rowEls.A.style.animation = keyframes;
-          rowEls.B.style.animation = keyframes;
-
-          if (CONFIG.pauseSec > 0){
-            lineLoopPause([rowEls.A, rowEls.B], dur, CONFIG.pauseSec);
-          }
-        });
-      });
+      const totalWidth = measureContentWidth(els.bufA);
+      const vw = els.viewport.clientWidth;
+      if (totalWidth <= vw * 0.92){
+        els.bufA.style.animation = els.bufB.style.animation = 'none';
+        els.bufA.style.transform = els.bufB.style.transform = 'translateX(0)';
+        els.bufA.classList.add('hidden');
+        els.bufB.classList.add('hidden');
+        els.staticFit.classList.remove('hidden');
+        els.staticFit.innerHTML = `<div class="line">EN ${enText}</div><div class="line">JA ${jaText}</div>`;
+        return;
+      }
+      const distance = totalWidth + vw;
+      const dur = distance / CONFIG.speedPPS;
+      document.documentElement.style.setProperty('--to-x', `-${distance}px`);
+      const keyframes = `marquee ${dur}s linear infinite`;
+      els.bufA.style.left = `${vw}px`;
+      els.bufB.style.left = `${vw + totalWidth}px`;
+      els.bufA.style.animation = els.bufB.style.animation = keyframes;
+      if (CONFIG.pauseSec > 0){ setupLoopPause([els.bufA, els.bufB], dur, CONFIG.pauseSec); }
     }
 
-    function relayoutCurrent(){
-      // 現在表示中のテキストを維持してラインを再構成
-      const enText = currentText(els.rows.en);
-      const jaText = currentText(els.rows.ja);
-      if (enText) setupLine(els.rows.en, enText);
-      if (jaText) setupLine(els.rows.ja, jaText);
-    }
-
-    function currentText(rowEls){
-      // A/B/S のどれかに入っている現在のテキストを返す
-      return (rowEls.S.textContent || rowEls.A.textContent || '').trim();
-    }
-
-    function lineLoopPause(nodes, duration, pause){
+    function setupLoopPause(nodes, duration, pause){
       nodes.forEach((n)=>{
         let acc = 0; let playing = true; let last = performance.now();
         const tick = (t)=>{
@@ -183,30 +146,29 @@
       });
     }
 
-    function measureWidth(el){
-      const r = el.getBoundingClientRect();
-      return Math.ceil(r.width || 0);
+    function measureContentWidth(el){
+      const rect = el.getBoundingClientRect();
+      return Math.ceil(rect.width || 0);
     }
 
-    async function load(){
+    async function loadAndRender(){
       try{
-        const [enItem, jaItem] = await Promise.all([
-          fetchNews(CONFIG.enLang).catch(()=>null),
-          fetchNews(CONFIG.jaLang).catch(()=>null)
+        const [en, ja] = await Promise.all([
+          fetchNewsByLang(CONFIG.enLang).catch(()=>null),
+          fetchNewsByLang(CONFIG.jaLang).catch(()=>null),
         ]);
-        const t = texts(enItem, jaItem);
-        setupLine(els.rows.en, t.en);
-        setupLine(els.rows.ja, t.ja);
-      }catch(e){
-        console.error(e);
-        setupLine(els.rows.en, CONFIG.fallbackEN);
-        setupLine(els.rows.ja, CONFIG.fallbackJA);
+        const text = buildTickerText(en, ja);
+        mountContent(text.en, text.ja);
+      }catch(err){
+        console.error(err);
+        mountContent(CONFIG.fallbackEN, CONFIG.fallbackJA);
       }
     }
 
-    updateDynamicFont();
-    load();
-    setInterval(load, CONFIG.refreshSec * 1000);
+    loadAndRender();
+    setInterval(loadAndRender, 60 * 1000);
+
+    window.addEventListener('resize', ()=>{ loadAndRender(); });
   </script>
 </body>
 </html>
