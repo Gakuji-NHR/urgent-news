@@ -5,79 +5,110 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>HANAZONO Updates Ticker</title>
   <style>
-    :root{
-      --band-bg: #000;
-      --text-color: #fff;
-      --label-bg: #c40000;
-      --label-color: #fff;
-      --font-min: 32px;
-      --font-max: 114px;
-      --font-dyn: 3.8vw;
-      --speed-pps: 150;
-      --scroll-threshold: 0.96;
-      --update-interval-sec: 60;
-      --gap-px: 80;
-    }
+:root{
+  --band-bg: #000;
+  --text-color: #fff;
+  --label-bg: #c40000;
+  --label-color: #fff;
 
-    *{box-sizing:border-box}
-    html,body{height:100%;margin:0;background:transparent;}
+  /* Fixed viewport */
+  --w: 1080px;
+  --h: 56px;
 
-    .band{
-      width:100%;
-      height:100%;
-      display:flex;
-      align-items:center;
-      background:var(--band-bg);
-      color:var(--text-color);
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
-      overflow:hidden;
-    }
+  /* Typography tuned for 56px height (2 lines) */
+  --label-font: 16px;
+  --text-font: 20px;
 
-    .label{
-      display:flex;
-      flex-direction:column;
-      justify-content:center;
-      background:var(--label-bg);
-      color:var(--label-color);
-      font-weight:800;
-      padding:.8em 1.2em;
-      white-space:nowrap;
-      user-select:none;
-      flex-shrink:0;
-      height:100%;
-      border:none; /* remove border */
-      margin:0; /* remove black gap */
-    }
-    .label span{
-      line-height:1.4;
-      font-size: 2.5em; /* 160% */
-    }
-    .label .jp{
-      font-weight:900;
-    }
+  /* Spacing */
+  --label-pad-x: 12px;
+  --label-pad-y: 6px;
+  --after-label-gap: 12px;  /* label → text spacing */
+  --en-ja-gap: 6px;         /* EN ↔ JA gap (pixel, reliable) */
 
-    .textBlock{
-      display:flex;
-      flex-direction:column;
-      justify-content:center;
-      overflow:hidden;
-      width:100%;
-      gap:25%;
-      margin-left:1rem; /* add spacing after label instead of black edge */
-    }
+  /* Marquee */
+  --speed-pps: 150;
+  --scroll-threshold: 0.96;
+  --update-interval-sec: 60;
+  --gap-px: 80;
+}
 
-    .line{position:relative;overflow:hidden;width:100%;}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:transparent;}
 
-    .text{font-size: clamp(var(--font-min), var(--font-dyn), var(--font-max));font-weight:700;line-height:1.15;white-space:nowrap;}
-    .scroller{display:inline-flex;will-change: transform;}
-    .item{ display:inline; white-space:nowrap; padding-right:2ch; }
-    .separator::after{ content:" • "; opacity:.6; }
+.band{
+  width: var(--w);
+  height: var(--h);
+  display:flex;
+  align-items:center;
+  background:var(--band-bg);
+  color:var(--text-color);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+  overflow:hidden;
+}
 
-    .static .scroller{ transform: translate3d(0,0,0) !important; }
-    @keyframes marquee{0%{ transform: translate3d(0,0,0);}100%{ transform: translate3d(var(--distance, -1000px), 0, 0);} }
+.label{
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  background:var(--label-bg);
+  color:var(--label-color);
+  font-weight:900;
+  padding: var(--label-pad-y) var(--label-pad-x);
+  white-space:nowrap;
+  user-select:none;
+  flex-shrink:0;
+  height:100%;
+  border:none;
+  margin:0;
+  border-radius: 6px;
+}
 
-    .emergency .label{animation: blink 1s steps(2, jump-none) infinite;box-shadow: 0 0 .9em rgba(255,0,0,.7);}
-    @keyframes blink{50%{visibility:hidden;}}
+.label span{
+  font-size: var(--label-font);
+  line-height: 1.05;
+}
+.label .jp{
+  margin-top: 4px; /* label内の行間（EN↔JP） */
+}
+
+.textBlock{
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  overflow:hidden;
+  width:100%;
+  gap: var(--en-ja-gap);
+  margin-left: var(--after-label-gap);
+}
+
+.line{
+  position:relative;
+  overflow:hidden;
+  width:100%;
+}
+
+.text{
+  font-size: var(--text-font);
+  font-weight:700;
+  line-height: 1.1;
+  white-space:nowrap;
+}
+
+.scroller{display:inline-flex;will-change: transform;}
+.item{ display:inline; white-space:nowrap; padding-right:2ch; }
+.separator::after{ content:" • "; opacity:.6; }
+
+.static .scroller{ transform: translate3d(0,0,0) !important; }
+@keyframes marquee{
+  0%{ transform: translate3d(0,0,0);}
+  100%{ transform: translate3d(var(--distance, -1000px), 0, 0);}
+}
+
+.emergency .label{
+  animation: blink 1s steps(2, jump-none) infinite;
+  box-shadow: 0 0 .9em rgba(255,0,0,.7);
+}
+@keyframes blink{50%{visibility:hidden;}}
   </style>
 </head>
 <body>
