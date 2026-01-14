@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=1080, height=70, initial-scale=1" />
   <title>HANAZONO Updates Ticker</title>
 
   <style>
@@ -12,7 +12,7 @@
       --label-bg: #c40000;
       --label-color: #fff;
 
-      /* tuned for 1080 x 70 (safe) */
+      /* tuned for fixed 1080 x 70 */
       --label-font: 13px;
       --text-font: 17px;
 
@@ -22,7 +22,7 @@
       --after-label-gap: 12px;
       --en-ja-gap: 6px;
 
-      /* scroll (15% slower than before) */
+      /* scroll (15% slower) */
       --speed-pps: 127.5;
       --scroll-threshold: 0.96;
       --update-interval-sec: 60;
@@ -32,15 +32,18 @@
     *{ box-sizing:border-box; }
 
     html, body{
-      width:100%;
-      height:100%;
+      width:1080px;
+      height:70px;
       margin:0;
+      padding:0;
+      overflow:hidden;
       background:transparent;
     }
 
+    /* ===== FIXED BAND ===== */
     .band{
-      width:100%;
-      height:100%;
+      width:1080px;
+      height:70px;
       display:flex;
       align-items:center;
       background:var(--band-bg);
@@ -59,7 +62,6 @@
       white-space:nowrap;
       user-select:none;
       flex-shrink:0;
-      border:none;
       margin:0;
 
       display:grid;
@@ -252,12 +254,6 @@
         });
       }
     }
-
-    const ro=new ResizeObserver(()=>{
-      setupMarquee(enText);
-      setupMarquee(jaText);
-    });
-    ro.observe(band);
 
     refresh();
     setInterval(refresh, updSec*1000);
