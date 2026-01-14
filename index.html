@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=1080, height=70, initial-scale=1" />
-  <title>HANAZONO Updates Ticker</title>
+  <title>HANAZONO Updates Ticker (Ultra Stable)</title>
 
   <style>
     :root{
@@ -18,16 +18,21 @@
 
       --label-pad-x: 12px;
 
+      /* label line spacing */
+      --label-row-gap: 4px;
+
       /* spacing */
-      --label-row-gap: 4px;   /* ← ラベル内 EN / JP 行間 */
       --after-label-gap: 12px;
       --en-ja-gap: 6px;
 
-      /* scroll (20% slower) */
+      /* scroll: px/sec (current slow) */
       --speed-pps: 102;
+
+      /* loop spacing */
       --gap-px: 80;
+
+      /* ensure movement even for short text */
       --min-distance-px: 900;
-      --update-interval-sec: 60;
     }
 
     *{ box-sizing:border-box; }
@@ -53,9 +58,9 @@
       overflow:hidden;
     }
 
-    /* ===== LABEL (FULL HEIGHT) ===== */
+    /* ===== LABEL (FULL HEIGHT 70px) ===== */
     .label{
-      height:70px;                 /* ← 常に70px */
+      height:70px;
       background:var(--label-bg);
       color:var(--label-color);
       font-weight:900;
@@ -67,13 +72,13 @@
 
       display:grid;
       grid-template-rows: auto auto;
-      align-content:center;        /* ← 上下中央寄せ */
+      align-content:center;
       row-gap: var(--label-row-gap);
     }
 
     .label span{
       font-size: var(--label-font);
-      line-height:1.2;             /* ← 視認性用 */
+      line-height:1.2;
       display:flex;
       align-items:center;
     }
@@ -95,16 +100,17 @@
       position:relative;
     }
 
+    .track{
+      display:inline-flex;
+      white-space:nowrap;
+      will-change: transform;
+      transform: translate3d(0,0,0);
+    }
+
     .text{
       font-size: var(--text-font);
       font-weight:700;
       line-height:1.1;
-      white-space:nowrap;
-    }
-
-    .scroller{
-      display:inline-flex;
-      will-change: transform;
     }
 
     .item{
@@ -117,16 +123,11 @@
       opacity:.6;
     }
 
-    @keyframes marquee{
-      from{ transform: translate3d(0,0,0); }
-      to{ transform: translate3d(var(--distance, -1000px),0,0); }
-    }
-
+    /* Emergency label blink (optional) */
     .emergency .label{
       animation: blink 1s steps(2, jump-none) infinite;
       box-shadow: 0 0 .7em rgba(255,0,0,.7);
     }
-
     @keyframes blink{
       50%{ visibility:hidden; }
     }
@@ -141,28 +142,40 @@
     </div>
 
     <div class="textBlock">
-      <div class="line en">
-        <div class="scroller text" id="enText"></div>
-      </div>
-      <div class="line ja">
-        <div class="scroller text" id="jaText"></div>
-      </div>
+      <div class="line en"><div class="track text" id="enTrack"></div></div>
+      <div class="line ja"><div class="track text" id="jaTrack"></div></div>
     </div>
   </div>
 
   <script>
   (()=>{
     const $ = s => document.querySelector(s);
-    const enText = $("#enText");
-    const jaText = $("#jaText");
+
+    const band = $("#band");
+    const enTrack = $("#enTrack");
+    const jaTrack = $("#jaTrack");
 
     const params = new URLSearchParams(location.search);
     const facility = +(params.get("facility") || 379);
     const limit = Math.max(1, +(params.get("limit") || 10));
-    const speed = +(params.get("speed") || 102);
-    const gapPx = +(params.get("gap") || 80);
-    const minDistance = +(params.get("mindist") || 900);
-    const updSec = +(params.get("interval") || 60);
+
+    // fixed refresh: 60s
+    const UPDATE_INTERVAL_MS = 60000;
+
+    // scroll params
+    const speed = +(params.get("speed") || cssNumber("--speed-pps") || 102);    // px/sec
+    const gapPx = +(params.get("gap") || cssNumber("--gap-px") || 80);
+    const minDistance = +(params.get("mindist") || cssNumber("--min-distance-px") || 900);
+
+    const emergency = ["1","true","on","yes"]
+      .includes(String(params.get("emergency")).toLowerCase());
+    if (emergency) band.classList.add("emergency");
+
+    function cssNumber(name){
+      const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? n : null;
+    }
 
     const API = "https://web-api.yukiyama.biz/web-api/news/backward";
 
@@ -172,7 +185,7 @@
       url.searchParams.set("limit", limit);
       url.searchParams.set("lang", lang);
       const res = await fetch(url.toString(), { cache:"no-store" });
-      if(!res.ok) throw new Error(res.status);
+      if(!res.ok) throw new Error("API " + res.status);
       return Object.values(await res.json())
         .filter(v => v && (v.title || v.message))
         .sort((a,b)=> new Date(b.time)-new Date(a.time));
@@ -186,59 +199,121 @@
           .replace(/\s+/g," ").trim();
       }).filter(Boolean);
 
-    function renderLine(el, parts){
-      el.innerHTML="";
-      const make=()=>{
-        const f=document.createDocumentFragment();
+    function renderTrack(trackEl, parts){
+      trackEl.innerHTML = "";
+
+      const makeSet = ()=>{
+        const frag = document.createDocumentFragment();
         parts.forEach((p,i)=>{
-          const s=document.createElement("span");
-          s.className="item"+(i<parts.length-1?" separator":"");
-          s.textContent=p;
-          f.appendChild(s);
+          const s = document.createElement("span");
+          s.className = "item" + (i < parts.length-1 ? " separator" : "");
+          s.textContent = p;
+          frag.appendChild(s);
         });
-        return f;
+        return frag;
       };
-      el.appendChild(make());
-      el.appendChild(make());
+
+      // two sets for seamless loop
+      trackEl.appendChild(makeSet());
+      trackEl.appendChild(makeSet());
     }
 
-    function measureWidth(el){
-      const kids=[...el.children];
-      const half=kids.length/2;
-      let w=0;
-      for(let i=0;i<half;i++) w+=kids[i].getBoundingClientRect().width;
+    function measureOneSetWidth(trackEl){
+      const kids = [...trackEl.children];
+      const half = kids.length / 2;
+      let w = 0;
+      for(let i=0;i<half;i++){
+        w += kids[i].getBoundingClientRect().width;
+      }
       return w;
     }
 
-    function setupSyncedMarquee(enEl, jaEl){
-      const baseW = Math.max(measureWidth(enEl), measureWidth(jaEl));
-      const travel = Math.max(baseW + gapPx, minDistance);
-      const dist = -travel;
-      const duration = Math.abs(dist) / speed;
+    // ===== Ultra-stable ticker engine (no CSS animation) =====
+    let rafId = null;
 
-      enEl.style.animation = "none";
-      jaEl.style.animation = "none";
-      void document.body.offsetWidth;
+    // Shared timeline (seconds)
+    let t0 = performance.now() / 1000;
 
-      enEl.style.setProperty("--distance", dist + "px");
-      jaEl.style.setProperty("--distance", dist + "px");
+    // Travel distance used for both EN/JA (synced)
+    let travel = minDistance;
 
-      enEl.style.animation = `marquee ${duration}s linear infinite`;
-      jaEl.style.animation = `marquee ${duration}s linear infinite`;
+    // Preserve phase when travel changes (avoid "jump back")
+    function updateTravelKeepingPhase(newTravel){
+      const now = performance.now() / 1000;
+      const elapsed = now - t0;            // seconds since start
+      const moved = elapsed * speed;       // px
+      const phase = (travel > 0) ? (moved % travel) / travel : 0;  // 0..1
+      travel = Math.max(1, newTravel);
+      // adjust t0 so that new travel keeps same phase
+      // phase = ((now - t0) * speed % travel) / travel
+      // pick t0 such that ((now - t0) * speed) % travel = phase * travel
+      // easiest: set t0 so moved' = phase*travel at 'now'
+      // moved' = (now - t0)*speed => now - t0 = (phase*travel)/speed
+      t0 = now - (phase * travel) / speed;
     }
 
+    function tick(){
+      const now = performance.now() / 1000;
+      const elapsed = now - t0;
+      const moved = elapsed * speed;              // px
+      const x = - (moved % travel);               // 0 .. -travel
+
+      // Apply same x to both tracks for perfect sync
+      const tx = `translate3d(${x}px,0,0)`;
+      enTrack.style.transform = tx;
+      jaTrack.style.transform = tx;
+
+      rafId = requestAnimationFrame(tick);
+    }
+
+    function startTicker(){
+      if(rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(tick);
+    }
+
+    // ===== Data refresh (60s) =====
     async function refresh(){
-      const [en,ja]=await Promise.all([
-        fetchNews("en").catch(()=>[]),
-        fetchNews("ja").catch(()=>[])
-      ]);
-      renderLine(enText, compose(en.length?en:ja));
-      renderLine(jaText, compose(ja.length?ja:en));
-      requestAnimationFrame(()=>setupSyncedMarquee(enText, jaText));
+      try{
+        const [en, ja] = await Promise.all([
+          fetchNews("en").catch(()=>[]),
+          fetchNews("ja").catch(()=>[])
+        ]);
+
+        const enParts = compose(en.length ? en : ja);
+        const jaParts = compose(ja.length ? ja : en);
+
+        renderTrack(enTrack, enParts.length ? enParts : ["No updates available"]);
+        renderTrack(jaTrack, jaParts.length ? jaParts : ["現在、お知らせはありません。"]);
+
+        // After DOM update, measure widths and compute shared travel (longer line wins)
+        requestAnimationFrame(()=>{
+          const enW = measureOneSetWidth(enTrack);
+          const jaW = measureOneSetWidth(jaTrack);
+          const baseW = Math.max(enW, jaW);
+
+          const newTravel = Math.max(baseW + gapPx, minDistance);
+
+          // Important: keep phase so it never "jumps back"
+          updateTravelKeepingPhase(newTravel);
+        });
+
+      }catch(err){
+        console.error(err);
+
+        renderTrack(enTrack, ["No updates available"]);
+        renderTrack(jaTrack, ["現在、お知らせはありません。"]);
+
+        requestAnimationFrame(()=>{
+          // fallback travel
+          updateTravelKeepingPhase(minDistance);
+        });
+      }
     }
 
+    // Boot
     refresh();
-    setInterval(refresh, updSec*1000);
+    startTicker();
+    setInterval(refresh, UPDATE_INTERVAL_MS);
   })();
   </script>
 </body>
