@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=1080, height=70, initial-scale=1" />
-  <title>HANAZONO Updates Ticker (Ultra Stable)</title>
+  <title>HANAZONO Updates Ticker (Ultra Stable, Seamless Loop)</title>
 
   <style>
     :root{
@@ -17,22 +17,19 @@
       --text-font: 17px;
 
       --label-pad-x: 12px;
-
-      /* label line spacing */
       --label-row-gap: 4px;
 
-      /* spacing */
       --after-label-gap: 12px;
       --en-ja-gap: 6px;
 
-      /* scroll: px/sec (current slow) */
+      /* scroll px/sec */
       --speed-pps: 102;
 
-      /* loop spacing */
+      /* blank interval between cycles (extra space after the text fully exits) */
       --gap-px: 80;
 
-      /* ensure movement even for short text */
-      --min-distance-px: 900;
+      /* safety */
+      --min-cycle-px: 900;
     }
 
     *{ box-sizing:border-box; }
@@ -100,6 +97,7 @@
       position:relative;
     }
 
+    /* rAFで動かすトラック */
     .track{
       display:inline-flex;
       white-space:nowrap;
@@ -123,13 +121,11 @@
       opacity:.6;
     }
 
-    /* Emergency label blink (optional) */
-    .emergency .label{
-      animation: blink 1s steps(2, jump-none) infinite;
-      box-shadow: 0 0 .7em rgba(255,0,0,.7);
-    }
-    @keyframes blink{
-      50%{ visibility:hidden; }
+    /* “間隔”部分（透明スペーサ） */
+    .spacer{
+      display:inline-block;
+      width: 0px; /* JSで上書き */
+      flex: 0 0 auto;
     }
   </style>
 </head>
@@ -159,17 +155,13 @@
     const facility = +(params.get("facility") || 379);
     const limit = Math.max(1, +(params.get("limit") || 10));
 
-    // fixed refresh: 60s
+    // 固定更新：60秒
     const UPDATE_INTERVAL_MS = 60000;
 
-    // scroll params
-    const speed = +(params.get("speed") || cssNumber("--speed-pps") || 102);    // px/sec
+    // スクロール設定
+    const speed = +(params.get("speed") || cssNumber("--speed-pps") || 102);  // px/sec
     const gapPx = +(params.get("gap") || cssNumber("--gap-px") || 80);
-    const minDistance = +(params.get("mindist") || cssNumber("--min-distance-px") || 900);
-
-    const emergency = ["1","true","on","yes"]
-      .includes(String(params.get("emergency")).toLowerCase());
-    if (emergency) band.classList.add("emergency");
+    const minCycle = +(params.get("mincycle") || cssNumber("--min-cycle-px") || 900);
 
     function cssNumber(name){
       const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -199,66 +191,62 @@
           .replace(/\s+/g," ").trim();
       }).filter(Boolean);
 
-    function renderTrack(trackEl, parts){
+    function buildSet(parts){
+      const frag = document.createDocumentFragment();
+      parts.forEach((p,i)=>{
+        const s = document.createElement("span");
+        s.className = "item" + (i < parts.length-1 ? " separator" : "");
+        s.textContent = p;
+        frag.appendChild(s);
+      });
+      return frag;
+    }
+
+    function renderTwoCyclesWithSpacer(trackEl, parts){
       trackEl.innerHTML = "";
+      const set1 = document.createElement("span");
+      set1.style.display = "inline-flex";
+      set1.appendChild(buildSet(parts));
 
-      const makeSet = ()=>{
-        const frag = document.createDocumentFragment();
-        parts.forEach((p,i)=>{
-          const s = document.createElement("span");
-          s.className = "item" + (i < parts.length-1 ? " separator" : "");
-          s.textContent = p;
-          frag.appendChild(s);
-        });
-        return frag;
-      };
+      const spacer = document.createElement("span");
+      spacer.className = "spacer";
 
-      // two sets for seamless loop
-      trackEl.appendChild(makeSet());
-      trackEl.appendChild(makeSet());
+      const set2 = document.createElement("span");
+      set2.style.display = "inline-flex";
+      set2.appendChild(buildSet(parts));
+
+      trackEl.appendChild(set1);
+      trackEl.appendChild(spacer);
+      trackEl.appendChild(set2);
+
+      return { set1, spacer };
     }
 
-    function measureOneSetWidth(trackEl){
-      const kids = [...trackEl.children];
-      const half = kids.length / 2;
-      let w = 0;
-      for(let i=0;i<half;i++){
-        w += kids[i].getBoundingClientRect().width;
-      }
-      return w;
+    function measureWidth(el){
+      return el.getBoundingClientRect().width;
     }
 
-    // ===== Ultra-stable ticker engine (no CSS animation) =====
+    function viewportWidthOf(trackEl){
+      return trackEl.parentElement.getBoundingClientRect().width;
+    }
+
+    // ===== Ultra-stable seamless engine (no CSS animation) =====
     let rafId = null;
-
-    // Shared timeline (seconds)
-    let t0 = performance.now() / 1000;
-
-    // Travel distance used for both EN/JA (synced)
-    let travel = minDistance;
-
-    // Preserve phase when travel changes (avoid "jump back")
-    function updateTravelKeepingPhase(newTravel){
-      const now = performance.now() / 1000;
-      const elapsed = now - t0;            // seconds since start
-      const moved = elapsed * speed;       // px
-      const phase = (travel > 0) ? (moved % travel) / travel : 0;  // 0..1
-      travel = Math.max(1, newTravel);
-      // adjust t0 so that new travel keeps same phase
-      // phase = ((now - t0) * speed % travel) / travel
-      // pick t0 such that ((now - t0) * speed) % travel = phase * travel
-      // easiest: set t0 so moved' = phase*travel at 'now'
-      // moved' = (now - t0)*speed => now - t0 = (phase*travel)/speed
-      t0 = now - (phase * travel) / speed;
-    }
+    let x = 0;                 // current translateX
+    let lastT = performance.now() / 1000;
+    let cycleLen = minCycle;   // shared cycle length (px)
 
     function tick(){
       const now = performance.now() / 1000;
-      const elapsed = now - t0;
-      const moved = elapsed * speed;              // px
-      const x = - (moved % travel);               // 0 .. -travel
+      const dt = now - lastT;
+      lastT = now;
 
-      // Apply same x to both tracks for perfect sync
+      // move left continuously
+      x -= speed * dt;
+
+      // seamless wrap: when passed one cycle, add cycleLen (no visible jump because we have 2nd set)
+      while (x <= -cycleLen) x += cycleLen;
+
       const tx = `translate3d(${x}px,0,0)`;
       enTrack.style.transform = tx;
       jaTrack.style.transform = tx;
@@ -267,11 +255,38 @@
     }
 
     function startTicker(){
-      if(rafId) cancelAnimationFrame(rafId);
+      if (rafId) cancelAnimationFrame(rafId);
+      lastT = performance.now() / 1000;
       rafId = requestAnimationFrame(tick);
     }
 
-    // ===== Data refresh (60s) =====
+    // set cycleLen and update spacers so that:
+    //  - EN/JA start is synced
+    //  - 2nd cycle does NOT enter until 1st fully exits + gap
+    function syncCycle(enMeta, jaMeta){
+      const viewW = Math.max(viewportWidthOf(enTrack), viewportWidthOf(jaTrack));
+
+      const enW = measureWidth(enMeta.set1);
+      const jaW = measureWidth(jaMeta.set1);
+
+      // base content width (longer wins)
+      const baseW = Math.max(enW, jaW);
+
+      // We want: after content fully exits, keep blank interval (gapPx), then next cycle appears.
+      // To guarantee no overlap, spacer width for each line:
+      // spacer = (baseW - thisW) + gapPx + viewW
+      // cycleLen (shared) is baseW + gapPx + viewW
+      const shared = Math.max(baseW + gapPx + viewW, minCycle);
+
+      enMeta.spacer.style.width = ((baseW - enW) + gapPx + viewW) + "px";
+      jaMeta.spacer.style.width = ((baseW - jaW) + gapPx + viewW) + "px";
+
+      // Keep continuity: don't reset x; just update cycle length and wrap x into range
+      cycleLen = shared;
+      while (x <= -cycleLen) x += cycleLen;
+      while (x > 0) x -= cycleLen;
+    }
+
     async function refresh(){
       try{
         const [en, ja] = await Promise.all([
@@ -282,35 +297,23 @@
         const enParts = compose(en.length ? en : ja);
         const jaParts = compose(ja.length ? ja : en);
 
-        renderTrack(enTrack, enParts.length ? enParts : ["No updates available"]);
-        renderTrack(jaTrack, jaParts.length ? jaParts : ["現在、お知らせはありません。"]);
+        const enMeta = renderTwoCyclesWithSpacer(enTrack, enParts.length ? enParts : ["No updates available"]);
+        const jaMeta = renderTwoCyclesWithSpacer(jaTrack, jaParts.length ? jaParts : ["現在、お知らせはありません。"]);
 
-        // After DOM update, measure widths and compute shared travel (longer line wins)
-        requestAnimationFrame(()=>{
-          const enW = measureOneSetWidth(enTrack);
-          const jaW = measureOneSetWidth(jaTrack);
-          const baseW = Math.max(enW, jaW);
-
-          const newTravel = Math.max(baseW + gapPx, minDistance);
-
-          // Important: keep phase so it never "jumps back"
-          updateTravelKeepingPhase(newTravel);
-        });
+        // measure and sync after layout
+        requestAnimationFrame(()=> syncCycle(enMeta, jaMeta));
 
       }catch(err){
         console.error(err);
 
-        renderTrack(enTrack, ["No updates available"]);
-        renderTrack(jaTrack, ["現在、お知らせはありません。"]);
+        const enMeta = renderTwoCyclesWithSpacer(enTrack, ["No updates available"]);
+        const jaMeta = renderTwoCyclesWithSpacer(jaTrack, ["現在、お知らせはありません。"]);
 
-        requestAnimationFrame(()=>{
-          // fallback travel
-          updateTravelKeepingPhase(minDistance);
-        });
+        requestAnimationFrame(()=> syncCycle(enMeta, jaMeta));
       }
     }
 
-    // Boot
+    // boot
     refresh();
     startTicker();
     setInterval(refresh, UPDATE_INTERVAL_MS);
