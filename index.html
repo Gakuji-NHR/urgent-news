@@ -1,323 +1,218 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=1080, height=70, initial-scale=1" />
-  <title>HANAZONO Updates Ticker (Ultra Stable, Seamless Loop)</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1080, height=70, initial-scale=1" />
+<title>HANAZONO Updates Ticker</title>
 
-  <style>
-    :root{
-      --band-bg: #000;
-      --text-color: #fff;
-      --label-bg: #c40000;
-      --label-color: #fff;
+<style>
+:root{
+  --band-bg:#000;
+  --text-color:#fff;
+  --label-bg:#c40000;
+  --label-color:#fff;
 
-      /* fixed 1080 x 70 */
-      --label-font: 13px;
-      --text-font: 17px;
+  --label-font:13px;
+  --text-font:17px;
 
-      --label-pad-x: 12px;
-      --label-row-gap: 4px;
+  --label-pad-x:12px;
+  --label-row-gap:4px;
 
-      --after-label-gap: 12px;
-      --en-ja-gap: 6px;
+  --after-label-gap:12px;
+  --en-ja-gap:6px;
 
-      /* scroll px/sec */
-      --speed-pps: 102;
+  --speed-pps:102;
+  --gap-px:80;
+  --min-cycle-px:900;
+}
 
-      /* blank interval between cycles (extra space after the text fully exits) */
-      --gap-px: 80;
+*{box-sizing:border-box}
 
-      /* safety */
-      --min-cycle-px: 900;
-    }
+html,body{
+  width:1080px;
+  height:70px;
+  margin:0;
+  overflow:hidden;
+}
 
-    *{ box-sizing:border-box; }
+.band{
+  width:1080px;
+  height:70px;
+  display:flex;
+  align-items:center;
+  background:var(--band-bg);
+  color:var(--text-color);
+  font-family:system-ui,"Noto Sans JP",sans-serif;
+}
 
-    html, body{
-      width:1080px;
-      height:70px;
-      margin:0;
-      padding:0;
-      overflow:hidden;
-      background:transparent;
-    }
+.label{
+  height:70px;
+  background:var(--label-bg);
+  color:var(--label-color);
+  font-weight:900;
+  padding:0 var(--label-pad-x);
+  display:grid;
+  grid-template-rows:auto auto;
+  align-content:center;
+  row-gap:var(--label-row-gap);
+  flex-shrink:0;
+}
 
-    .band{
-      width:1080px;
-      height:70px;
-      display:flex;
-      align-items:center;
-      background:var(--band-bg);
-      color:var(--text-color);
-      font-family: system-ui, -apple-system, Segoe UI, Roboto,
-        "Noto Sans JP","Hiragino Kaku Gothic ProN",Meiryo,sans-serif;
-      overflow:hidden;
-    }
+.label span{
+  font-size:var(--label-font);
+  line-height:1.2;
+}
 
-    /* ===== LABEL (FULL HEIGHT 70px) ===== */
-    .label{
-      height:70px;
-      background:var(--label-bg);
-      color:var(--label-color);
-      font-weight:900;
-      padding: 0 var(--label-pad-x);
-      white-space:nowrap;
-      user-select:none;
-      flex-shrink:0;
-      margin:0;
+.textBlock{
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  width:100%;
+  overflow:hidden;
+  margin-left:var(--after-label-gap);
+  gap:var(--en-ja-gap);
+}
 
-      display:grid;
-      grid-template-rows: auto auto;
-      align-content:center;
-      row-gap: var(--label-row-gap);
-    }
+.line{overflow:hidden}
 
-    .label span{
-      font-size: var(--label-font);
-      line-height:1.2;
-      display:flex;
-      align-items:center;
-    }
+.track{
+  display:inline-flex;
+  white-space:nowrap;
+  will-change:transform;
+}
 
-    /* ===== TEXT ===== */
-    .textBlock{
-      display:flex;
-      flex-direction:column;
-      justify-content:center;
-      width:100%;
-      overflow:hidden;
-      margin-left: var(--after-label-gap);
-      gap: var(--en-ja-gap);
-    }
+.text{
+  font-size:var(--text-font);
+  font-weight:700;
+  line-height:1.1;
+}
 
-    .line{
-      width:100%;
-      overflow:hidden;
-      position:relative;
-    }
+.item{padding-right:2ch}
 
-    /* rAFで動かすトラック */
-    .track{
-      display:inline-flex;
-      white-space:nowrap;
-      will-change: transform;
-      transform: translate3d(0,0,0);
-    }
+.separator::after{content:" • ";opacity:.6}
 
-    .text{
-      font-size: var(--text-font);
-      font-weight:700;
-      line-height:1.1;
-    }
+/* ★ <br> replacement */
+.br-spacer{
+  display:inline-block;
+  width:20px;
+  height:1px;
+  flex:0 0 auto;
+}
 
-    .item{
-      white-space:nowrap;
-      padding-right:2ch;
-    }
-
-    .separator::after{
-      content:" • ";
-      opacity:.6;
-    }
-
-    /* “間隔”部分（透明スペーサ） */
-    .spacer{
-      display:inline-block;
-      width: 0px; /* JSで上書き */
-      flex: 0 0 auto;
-    }
-  </style>
+/* blank spacer between cycles */
+.spacer{
+  display:inline-block;
+  width:0;
+}
+</style>
 </head>
 
 <body>
-  <div class="band" id="band">
-    <div class="label">
-      <span>UPDATES</span>
-      <span>最新情報</span>
-    </div>
-
-    <div class="textBlock">
-      <div class="line en"><div class="track text" id="enTrack"></div></div>
-      <div class="line ja"><div class="track text" id="jaTrack"></div></div>
-    </div>
+<div class="band">
+  <div class="label">
+    <span>UPDATES</span>
+    <span>最新情報</span>
   </div>
+  <div class="textBlock">
+    <div class="line"><div class="track text" id="enTrack"></div></div>
+    <div class="line"><div class="track text" id="jaTrack"></div></div>
+  </div>
+</div>
 
-  <script>
-  (()=>{
-    const $ = s => document.querySelector(s);
+<script>
+(()=>{
+const $=s=>document.querySelector(s);
+const enTrack=$("#enTrack");
+const jaTrack=$("#jaTrack");
 
-    const band = $("#band");
-    const enTrack = $("#enTrack");
-    const jaTrack = $("#jaTrack");
+const API="https://web-api.yukiyama.biz/web-api/news/backward";
+const facility=379;
+const UPDATE_INTERVAL=60000;
+const speed=102;
+const gapPx=80;
+const minCycle=900;
 
-    const params = new URLSearchParams(location.search);
-    const facility = +(params.get("facility") || 379);
-    const limit = Math.max(1, +(params.get("limit") || 10));
+let x=0,lastT=performance.now()/1000,cycleLen=minCycle;
 
-    // 固定更新：60秒
-    const UPDATE_INTERVAL_MS = 60000;
+/* ===== text normalize ===== */
+function normalizeText(str){
+  return str
+    .replace(/<br\s*\/?>/gi,'<span class="br-spacer"></span>')
+    .replace(/\r?\n/g,'<span class="br-spacer"></span>')
+    .trim();
+}
 
-    // スクロール設定
-    const speed = +(params.get("speed") || cssNumber("--speed-pps") || 102);  // px/sec
-    const gapPx = +(params.get("gap") || cssNumber("--gap-px") || 80);
-    const minCycle = +(params.get("mincycle") || cssNumber("--min-cycle-px") || 900);
+function compose(items){
+  return items.map(v=>{
+    const t=(v.title||"").trim();
+    const m=(v.message||"").trim();
+    return normalizeText(t&&m?`${t} — ${m}`:(t||m));
+  });
+}
 
-    function cssNumber(name){
-      const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-      const n = parseFloat(v);
-      return Number.isFinite(n) ? n : null;
-    }
+function buildSet(parts){
+  const f=document.createDocumentFragment();
+  parts.forEach((p,i)=>{
+    const s=document.createElement("span");
+    s.className="item"+(i<parts.length-1?" separator":"");
+    s.innerHTML=p;   // ★ HTMLとして描画
+    f.appendChild(s);
+  });
+  return f;
+}
 
-    const API = "https://web-api.yukiyama.biz/web-api/news/backward";
+function render(track,parts){
+  track.innerHTML="";
+  const set1=document.createElement("span");
+  set1.style.display="inline-flex";
+  set1.appendChild(buildSet(parts));
 
-    async function fetchNews(lang){
-      const url = new URL(API);
-      url.searchParams.set("skiareaId", facility);
-      url.searchParams.set("limit", limit);
-      url.searchParams.set("lang", lang);
-      const res = await fetch(url.toString(), { cache:"no-store" });
-      if(!res.ok) throw new Error("API " + res.status);
-      return Object.values(await res.json())
-        .filter(v => v && (v.title || v.message))
-        .sort((a,b)=> new Date(b.time)-new Date(a.time));
-    }
+  const spacer=document.createElement("span");
+  spacer.className="spacer";
 
-    const compose = items =>
-      items.map(v=>{
-        const t=(v.title||"").trim();
-        const m=(v.message||"").trim();
-        return (t && m ? `${t} — ${m}` : (t||m))
-          .replace(/\s+/g," ").trim();
-      }).filter(Boolean);
+  const set2=document.createElement("span");
+  set2.style.display="inline-flex";
+  set2.appendChild(buildSet(parts));
 
-    function buildSet(parts){
-      const frag = document.createDocumentFragment();
-      parts.forEach((p,i)=>{
-        const s = document.createElement("span");
-        s.className = "item" + (i < parts.length-1 ? " separator" : "");
-        s.textContent = p;
-        frag.appendChild(s);
-      });
-      return frag;
-    }
+  track.append(set1,spacer,set2);
+  return{set1,spacer};
+}
 
-    function renderTwoCyclesWithSpacer(trackEl, parts){
-      trackEl.innerHTML = "";
-      const set1 = document.createElement("span");
-      set1.style.display = "inline-flex";
-      set1.appendChild(buildSet(parts));
+function tick(){
+  const now=performance.now()/1000;
+  const dt=now-lastT; lastT=now;
+  x-=speed*dt;
+  while(x<=-cycleLen)x+=cycleLen;
+  const tx=`translate3d(${x}px,0,0)`;
+  enTrack.style.transform=tx;
+  jaTrack.style.transform=tx;
+  requestAnimationFrame(tick);
+}
 
-      const spacer = document.createElement("span");
-      spacer.className = "spacer";
+async function refresh(){
+  const res=await fetch(`${API}?skiareaId=${facility}&limit=10&lang=en`).then(r=>r.json()).catch(()=>[]);
+  const resJ=await fetch(`${API}?skiareaId=${facility}&limit=10&lang=ja`).then(r=>r.json()).catch(()=>[]);
+  const enParts=compose(Object.values(res));
+  const jaParts=compose(Object.values(resJ));
 
-      const set2 = document.createElement("span");
-      set2.style.display = "inline-flex";
-      set2.appendChild(buildSet(parts));
+  const enMeta=render(enTrack,enParts.length?enParts:["No updates available"]);
+  const jaMeta=render(jaTrack,jaParts.length?jaParts:["現在、お知らせはありません。"]);
 
-      trackEl.appendChild(set1);
-      trackEl.appendChild(spacer);
-      trackEl.appendChild(set2);
+  requestAnimationFrame(()=>{
+    const enW=enMeta.set1.getBoundingClientRect().width;
+    const jaW=jaMeta.set1.getBoundingClientRect().width;
+    const viewW=enTrack.parentElement.getBoundingClientRect().width;
+    const baseW=Math.max(enW,jaW);
+    cycleLen=Math.max(baseW+gapPx+viewW,minCycle);
+    enMeta.spacer.style.width=(baseW-enW+gapPx+viewW)+"px";
+    jaMeta.spacer.style.width=(baseW-jaW+gapPx+viewW)+"px";
+  });
+}
 
-      return { set1, spacer };
-    }
-
-    function measureWidth(el){
-      return el.getBoundingClientRect().width;
-    }
-
-    function viewportWidthOf(trackEl){
-      return trackEl.parentElement.getBoundingClientRect().width;
-    }
-
-    // ===== Ultra-stable seamless engine (no CSS animation) =====
-    let rafId = null;
-    let x = 0;                 // current translateX
-    let lastT = performance.now() / 1000;
-    let cycleLen = minCycle;   // shared cycle length (px)
-
-    function tick(){
-      const now = performance.now() / 1000;
-      const dt = now - lastT;
-      lastT = now;
-
-      // move left continuously
-      x -= speed * dt;
-
-      // seamless wrap: when passed one cycle, add cycleLen (no visible jump because we have 2nd set)
-      while (x <= -cycleLen) x += cycleLen;
-
-      const tx = `translate3d(${x}px,0,0)`;
-      enTrack.style.transform = tx;
-      jaTrack.style.transform = tx;
-
-      rafId = requestAnimationFrame(tick);
-    }
-
-    function startTicker(){
-      if (rafId) cancelAnimationFrame(rafId);
-      lastT = performance.now() / 1000;
-      rafId = requestAnimationFrame(tick);
-    }
-
-    // set cycleLen and update spacers so that:
-    //  - EN/JA start is synced
-    //  - 2nd cycle does NOT enter until 1st fully exits + gap
-    function syncCycle(enMeta, jaMeta){
-      const viewW = Math.max(viewportWidthOf(enTrack), viewportWidthOf(jaTrack));
-
-      const enW = measureWidth(enMeta.set1);
-      const jaW = measureWidth(jaMeta.set1);
-
-      // base content width (longer wins)
-      const baseW = Math.max(enW, jaW);
-
-      // We want: after content fully exits, keep blank interval (gapPx), then next cycle appears.
-      // To guarantee no overlap, spacer width for each line:
-      // spacer = (baseW - thisW) + gapPx + viewW
-      // cycleLen (shared) is baseW + gapPx + viewW
-      const shared = Math.max(baseW + gapPx + viewW, minCycle);
-
-      enMeta.spacer.style.width = ((baseW - enW) + gapPx + viewW) + "px";
-      jaMeta.spacer.style.width = ((baseW - jaW) + gapPx + viewW) + "px";
-
-      // Keep continuity: don't reset x; just update cycle length and wrap x into range
-      cycleLen = shared;
-      while (x <= -cycleLen) x += cycleLen;
-      while (x > 0) x -= cycleLen;
-    }
-
-    async function refresh(){
-      try{
-        const [en, ja] = await Promise.all([
-          fetchNews("en").catch(()=>[]),
-          fetchNews("ja").catch(()=>[])
-        ]);
-
-        const enParts = compose(en.length ? en : ja);
-        const jaParts = compose(ja.length ? ja : en);
-
-        const enMeta = renderTwoCyclesWithSpacer(enTrack, enParts.length ? enParts : ["No updates available"]);
-        const jaMeta = renderTwoCyclesWithSpacer(jaTrack, jaParts.length ? jaParts : ["現在、お知らせはありません。"]);
-
-        // measure and sync after layout
-        requestAnimationFrame(()=> syncCycle(enMeta, jaMeta));
-
-      }catch(err){
-        console.error(err);
-
-        const enMeta = renderTwoCyclesWithSpacer(enTrack, ["No updates available"]);
-        const jaMeta = renderTwoCyclesWithSpacer(jaTrack, ["現在、お知らせはありません。"]);
-
-        requestAnimationFrame(()=> syncCycle(enMeta, jaMeta));
-      }
-    }
-
-    // boot
-    refresh();
-    startTicker();
-    setInterval(refresh, UPDATE_INTERVAL_MS);
-  })();
-  </script>
+refresh();
+tick();
+setInterval(refresh,UPDATE_INTERVAL);
+})();
+</script>
 </body>
 </html>
