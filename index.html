@@ -13,7 +13,7 @@
       --label-color: #fff;
 
       /* tuned for fixed 1080 x 70 */
-      --label-font: 17px;
+      --label-font: 13px;
       --text-font: 17px;
 
       --label-pad-x: 12px;
@@ -24,9 +24,13 @@
 
       /* scroll (15% slower) */
       --speed-pps: 127.5;
-      --scroll-threshold: 0.96;
       --update-interval-sec: 60;
+
+      /* loop spacing */
       --gap-px: 80;
+
+      /* for short text: ensure the loop still feels like a ticker */
+      --min-distance-px: 900;
     }
 
     *{ box-sizing:border-box; }
@@ -40,7 +44,6 @@
       background:transparent;
     }
 
-    /* ===== FIXED BAND ===== */
     .band{
       width:1080px;
       height:70px;
@@ -115,10 +118,6 @@
       opacity:.6;
     }
 
-    .static .scroller{
-      transform: translate3d(0,0,0) !important;
-    }
-
     @keyframes marquee{
       from{ transform: translate3d(0,0,0); }
       to{ transform: translate3d(var(--distance, -1000px),0,0); }
@@ -163,11 +162,10 @@
     const facility = +(params.get("facility") || 379);
     const limit = Math.max(1, +(params.get("limit") || 10));
 
-    /* 15% slower default */
-    const speed = +(params.get("speed") || 127.5);
-    const threshold = +(params.get("threshold") || 0.96);
-    const gapPx = +(params.get("gap") || 80);
-    const updSec = +(params.get("interval") || 60);
+    const speed = +(params.get("speed") || 127.5);         // px/sec
+    const gapPx = +(params.get("gap") || 80);              // spacing between loops
+    const updSec = +(params.get("interval") || 60);        // refresh interval
+    const minDistance = +(params.get("mindist") || 900);   // ensure movement even for short text
 
     const emergency = ["1","true","on","yes"]
       .includes(String(params.get("emergency")).toLowerCase());
@@ -211,26 +209,32 @@
       el.appendChild(make());
     }
 
-    function setupMarquee(el){
-      const wrap=el.parentElement;
-      const kids=[...el.children];
-      const half=kids.length/2;
-      let w=0;
-      for(let i=0;i<half;i++) w+=kids[i].getBoundingClientRect().width;
-      const dist=-(w+gapPx);
-      el.style.setProperty("--distance",dist+"px");
+    function setupMarqueeAlways(el){
+      const wrap = el.parentElement;
+      const kids = [...el.children];
+      const half = kids.length / 2;
 
-      const need=w>wrap.clientWidth*threshold;
-      el.style.animation="none";
-      wrap.classList.remove("static");
+      // measure width of one set
+      let contentWidth = 0;
+      for(let i=0;i<half;i++){
+        contentWidth += kids[i].getBoundingClientRect().width;
+      }
+
+      // Always scroll:
+      // If text is short, force a minimum travel distance so it still looks like a ticker.
+      const travel = Math.max(contentWidth + gapPx, minDistance);
+
+      // Move left by travel px, then loop
+      const dist = -travel;
+      el.style.setProperty("--distance", dist + "px");
+
+      // restart animation cleanly
+      el.style.animation = "none";
       void el.offsetWidth;
 
-      if(!need){
-        wrap.classList.add("static");
-        el.style.transform="translate3d(0,0,0)";
-      }else{
-        el.style.animation=`marquee ${Math.abs(dist)/speed}s linear infinite`;
-      }
+      // duration = distance / speed
+      const duration = Math.abs(dist) / speed;
+      el.style.animation = `marquee ${duration}s linear infinite`;
     }
 
     async function refresh(){
@@ -241,19 +245,26 @@
         ]);
         renderLine(enText, compose(en.length?en:ja));
         renderLine(jaText, compose(ja.length?ja:en));
+
         requestAnimationFrame(()=>{
-          setupMarquee(enText);
-          setupMarquee(jaText);
+          setupMarqueeAlways(enText);
+          setupMarqueeAlways(jaText);
         });
       }catch{
         renderLine(enText,["No updates available"]);
         renderLine(jaText,["現在、お知らせはありません"]);
         requestAnimationFrame(()=>{
-          setupMarquee(enText);
-          setupMarquee(jaText);
+          setupMarqueeAlways(enText);
+          setupMarqueeAlways(jaText);
         });
       }
     }
+
+    const ro = new ResizeObserver(()=>{
+      setupMarqueeAlways(enText);
+      setupMarqueeAlways(jaText);
+    });
+    ro.observe(band);
 
     refresh();
     setInterval(refresh, updSec*1000);
