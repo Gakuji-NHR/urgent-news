@@ -12,15 +12,15 @@
       --label-bg: #c40000;
       --label-color: #fff;
 
-      /* tuned for 1080 x 56 */
-      --label-font: 15px;
-      --text-font: 20px;
+      /* tuned for 1080 x 70 */
+      --label-font: 18px;
+      --text-font: 24px;
 
-      --label-pad-x: 12px;
-      --label-pad-y: 3px;
+      --label-pad-x: 14px;
+      --label-pad-y: 5px;
 
-      --after-label-gap: 12px;
-      --en-ja-gap: 6px;
+      --after-label-gap: 14px;
+      --en-ja-gap: 8px;
 
       --speed-pps: 150;
       --scroll-threshold: 0.96;
@@ -244,6 +244,10 @@
       }catch{
         renderLine(enText,["No updates available"]);
         renderLine(jaText,["現在、お知らせはありません"]);
+        requestAnimationFrame(()=>{
+          setupMarquee(enText);
+          setupMarquee(jaText);
+        });
       }
     }
 
