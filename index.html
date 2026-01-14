@@ -4,24 +4,40 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>HANAZONO Updates Ticker</title>
+
   <style>
     :root{
       --band-bg: #000;
       --text-color: #fff;
       --label-bg: #c40000;
       --label-color: #fff;
-      --font-min: 32px;
-      --font-max: 114px;
-      --font-dyn: 3.8vw;
+
+      /* tuned for 1080 x 70 (safe) */
+      --label-font: 13px;   /* ↓ 約30% */
+      --text-font: 17px;    /* ↓ 約30% */
+
+      --label-pad-x: 12px;
+      --label-pad-y: 4px;
+
+      --after-label-gap: 12px;
+      --en-ja-gap: 6px;
+
       --speed-pps: 150;
       --scroll-threshold: 0.96;
       --update-interval-sec: 60;
       --gap-px: 80;
     }
 
-    *{box-sizing:border-box}
-    html,body{height:100%;margin:0;background:transparent;}
+    *{ box-sizing:border-box; }
 
+    html, body{
+      width:100%;
+      height:100%;
+      margin:0;
+      background:transparent;
+    }
+
+    /* CMS枠に完全追従 */
     .band{
       width:100%;
       height:100%;
@@ -29,66 +45,108 @@
       align-items:center;
       background:var(--band-bg);
       color:var(--text-color);
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto,
+        "Noto Sans JP","Hiragino Kaku Gothic ProN",Meiryo,sans-serif;
       overflow:hidden;
     }
 
+    /* ===== LABEL ===== */
     .label{
-      display:flex;
-      flex-direction:column;
-      justify-content:center;
       background:var(--label-bg);
       color:var(--label-color);
-      font-weight:800;
-      padding:.8em 1.2em;
+      font-weight:900;
+      padding: var(--label-pad-y) var(--label-pad-x);
       white-space:nowrap;
       user-select:none;
       flex-shrink:0;
-      height:100%;
-      border:none; /* remove border */
-      margin:0; /* remove black gap */
-    }
-    .label span{
-      line-height:1.4;
-      font-size: 2.5em; /* 160% */
-    }
-    .label .jp{
-      font-weight:900;
+      border:none;
+      margin:0;
+
+      display:grid;
+      grid-template-rows: 1fr 1fr;
+      align-items:center;
     }
 
+    .label span{
+      font-size: var(--label-font);
+      line-height:1;
+      display:flex;
+      align-items:center;
+    }
+
+    /* ===== TEXT ===== */
     .textBlock{
       display:flex;
       flex-direction:column;
       justify-content:center;
-      overflow:hidden;
       width:100%;
-      gap:25%;
-      margin-left:1rem; /* add spacing after label instead of black edge */
+      overflow:hidden;
+      margin-left: var(--after-label-gap);
+      gap: var(--en-ja-gap);
     }
 
-    .line{position:relative;overflow:hidden;width:100%;}
+    .line{
+      width:100%;
+      overflow:hidden;
+      position:relative;
+    }
 
-    .text{font-size: clamp(var(--font-min), var(--font-dyn), var(--font-max));font-weight:700;line-height:1.15;white-space:nowrap;}
-    .scroller{display:inline-flex;will-change: transform;}
-    .item{ display:inline; white-space:nowrap; padding-right:2ch; }
-    .separator::after{ content:" • "; opacity:.6; }
+    .text{
+      font-size: var(--text-font);
+      font-weight:700;
+      line-height:1.1;
+      white-space:nowrap;
+    }
 
-    .static .scroller{ transform: translate3d(0,0,0) !important; }
-    @keyframes marquee{0%{ transform: translate3d(0,0,0);}100%{ transform: translate3d(var(--distance, -1000px), 0, 0);} }
+    .scroller{
+      display:inline-flex;
+      will-change: transform;
+    }
 
-    .emergency .label{animation: blink 1s steps(2, jump-none) infinite;box-shadow: 0 0 .9em rgba(255,0,0,.7);}
-    @keyframes blink{50%{visibility:hidden;}}
+    .item{
+      white-space:nowrap;
+      padding-right:2ch;
+    }
+
+    .separator::after{
+      content:" • ";
+      opacity:.6;
+    }
+
+    .static .scroller{
+      transform: translate3d(0,0,0) !important;
+    }
+
+    @keyframes marquee{
+      from{ transform: translate3d(0,0,0); }
+      to{ transform: translate3d(var(--distance, -1000px),0,0); }
+    }
+
+    .emergency .label{
+      animation: blink 1s steps(2, jump-none) infinite;
+      box-shadow: 0 0 .7em rgba(255,0,0,.7);
+    }
+
+    @keyframes blink{
+      50%{ visibility:hidden; }
+    }
   </style>
 </head>
+
 <body>
   <div class="band" id="band">
     <div class="label">
       <span>UPDATES</span>
-      <span class="jp">最新情報</span>
+      <span>最新情報</span>
     </div>
+
     <div class="textBlock">
-      <div class="line en"><div class="scroller text" id="enText"></div></div>
-      <div class="line ja"><div class="scroller text" id="jaText"></div></div>
+      <div class="line en">
+        <div class="scroller text" id="enText"></div>
+      </div>
+      <div class="line ja">
+        <div class="scroller text" id="jaText"></div>
+      </div>
     </div>
   </div>
 
@@ -102,19 +160,14 @@
     const params = new URLSearchParams(location.search);
     const facility = +(params.get("facility") || 379);
     const limit = Math.max(1, +(params.get("limit") || 10));
-    const speed = +(params.get("speed") || cssNumber("--speed-pps") || 150);
-    const updSec = +(params.get("interval") || cssNumber("--update-interval-sec") || 60);
-    const threshold = +(params.get("threshold") || cssNumber("--scroll-threshold") || 0.96);
-    const gapPx = +(params.get("gap") || cssNumber("--gap-px") || 80);
-    const emergency = ["1","true","on","yes"].includes(String(params.get("emergency")).toLowerCase());
+    const speed = +(params.get("speed") || 150);
+    const threshold = +(params.get("threshold") || 0.96);
+    const gapPx = +(params.get("gap") || 80);
+    const updSec = +(params.get("interval") || 60);
 
+    const emergency = ["1","true","on","yes"]
+      .includes(String(params.get("emergency")).toLowerCase());
     if (emergency) band.classList.add("emergency");
-
-    function cssNumber(name){
-      const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-      const n = parseFloat(v);
-      return isNaN(n) ? null : n;
-    }
 
     const API = "https://web-api.yukiyama.biz/web-api/news/backward";
 
@@ -123,88 +176,74 @@
       url.searchParams.set("skiareaId", facility);
       url.searchParams.set("limit", limit);
       url.searchParams.set("lang", lang);
-      const res = await fetch(url.toString(), { cache: "no-store" });
-      if(!res.ok) throw new Error("API " + res.status);
-      const json = await res.json();
-      const arr = Object.values(json)
-        .filter(x => x && (x.title || x.message))
-        .sort((a,b)=> new Date(b.time) - new Date(a.time));
-      return arr;
+      const res = await fetch(url.toString(), { cache:"no-store" });
+      if(!res.ok) throw new Error(res.status);
+      return Object.values(await res.json())
+        .filter(v => v && (v.title || v.message))
+        .sort((a,b)=> new Date(b.time)-new Date(a.time));
     }
 
-    function compose(items){
-      return items.map(it => {
-        const t = (it.title || "").trim();
-        const m = (it.message || "").trim();
-        const s = (t && m) ? t + " — " + m : (t || m);
-        return s.replace(/\s+/g," ").trim();
+    const compose = items =>
+      items.map(v=>{
+        const t=(v.title||"").trim();
+        const m=(v.message||"").trim();
+        return (t && m ? `${t} — ${m}` : (t||m))
+          .replace(/\s+/g," ").trim();
       }).filter(Boolean);
-    }
 
-    function renderLine(container, parts){
-      container.innerHTML = "";
-      const buildSet = () => {
-        const frag = document.createDocumentFragment();
+    function renderLine(el, parts){
+      el.innerHTML="";
+      const make=()=>{
+        const f=document.createDocumentFragment();
         parts.forEach((p,i)=>{
-          const span = document.createElement("span");
-          span.className = "item" + (i < parts.length-1 ? " separator" : "");
-          span.innerText = p;
-          frag.appendChild(span);
+          const s=document.createElement("span");
+          s.className="item"+(i<parts.length-1?" separator":"");
+          s.textContent=p;
+          f.appendChild(s);
         });
-        return frag;
+        return f;
       };
-      container.appendChild(buildSet());
-      container.appendChild(buildSet());
+      el.appendChild(make());
+      el.appendChild(make());
     }
 
-    function setupMarquee(trackEl){
-      const wrap = trackEl.parentElement;
-      const children = Array.from(trackEl.children);
-      const half = children.length / 2;
-      let contentWidth = 0;
-      for(let i=0; i<half; i++){
-        const r = children[i].getBoundingClientRect();
-        contentWidth += r.width;
-      }
-      const distance = -(contentWidth + gapPx);
-      trackEl.style.setProperty("--distance", distance + "px");
+    function setupMarquee(el){
+      const wrap=el.parentElement;
+      const kids=[...el.children];
+      const half=kids.length/2;
+      let w=0;
+      for(let i=0;i<half;i++) w+=kids[i].getBoundingClientRect().width;
+      const dist=-(w+gapPx);
+      el.style.setProperty("--distance",dist+"px");
 
-      const wrapW = wrap.getBoundingClientRect().width;
-      const needScroll = contentWidth > wrapW * threshold;
-
-      trackEl.style.animation = "none";
+      const need=w>wrap.clientWidth*threshold;
+      el.style.animation="none";
       wrap.classList.remove("static");
-      void trackEl.offsetWidth;
+      void el.offsetWidth;
 
-      if(!needScroll){
+      if(!need){
         wrap.classList.add("static");
-        trackEl.style.transform = "translate3d(0,0,0)";
+        el.style.transform="translate3d(0,0,0)";
       }else{
-        const duration = Math.abs(distance) / speed;
-        trackEl.style.animation = `marquee ${duration}s linear infinite`;
+        el.style.animation=`marquee ${Math.abs(dist)/speed}s linear infinite`;
       }
     }
 
     async function refresh(){
       try{
-        const [en, ja] = await Promise.all([
+        const [en,ja]=await Promise.all([
           fetchNews("en").catch(()=>[]),
           fetchNews("ja").catch(()=>[])
         ]);
-        const enParts = compose(en.length ? en : ja);
-        const jaParts = compose(ja.length ? ja : en);
-
-        renderLine(enText, enParts);
-        renderLine(jaText, jaParts);
-
+        renderLine(enText, compose(en.length?en:ja));
+        renderLine(jaText, compose(ja.length?ja:en));
         requestAnimationFrame(()=>{
           setupMarquee(enText);
           setupMarquee(jaText);
         });
-      }catch(err){
-        console.error(err);
-        renderLine(enText, ["No updates available at this time."]);
-        renderLine(jaText, ["現在、お知らせはありません。"]);
+      }catch{
+        renderLine(enText,["No updates available"]);
+        renderLine(jaText,["現在、お知らせはありません"]);
         requestAnimationFrame(()=>{
           setupMarquee(enText);
           setupMarquee(jaText);
@@ -212,25 +251,14 @@
       }
     }
 
-    let ro;
-    function watchResize(){
-      if (ro) ro.disconnect();
-      ro = new ResizeObserver(()=>{
-        setupMarquee(enText);
-        setupMarquee(jaText);
-      });
-      ro.observe($("#band"));
-      ro.observe(enText.parentElement);
-      ro.observe(jaText.parentElement);
-      window.addEventListener("orientationchange", ()=>{
-        setupMarquee(enText);
-        setupMarquee(jaText);
-      });
-    }
+    const ro=new ResizeObserver(()=>{
+      setupMarquee(enText);
+      setupMarquee(jaText);
+    });
+    ro.observe(band);
 
     refresh();
-    watchResize();
-    setInterval(refresh, updSec * 1000);
+    setInterval(refresh, updSec*1000);
   })();
   </script>
 </body>
