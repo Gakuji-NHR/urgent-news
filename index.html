@@ -144,10 +144,14 @@ function normalizeText(str){
 
 function compose(items){
   return items.map(v=>{
-    const t=(v.title||"").trim();
-    const m=(v.message||"").trim();
-    return normalizeText(t&&m?`${t} — ${m}`:(t||m));
-  });
+    const t = (v.title || "").trim();
+    const m = (v.message || "").trim();
+
+    // ★ 区切りは em dash ではなく半角スペース
+    const combined = t && m ? `${t} ${m}` : (t || m);
+
+    return normalizeText(combined);
+  }).filter(Boolean);
 }
 
 function buildSet(parts){
