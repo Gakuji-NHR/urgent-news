@@ -12,22 +12,22 @@
       --label-bg: #c40000;
       --label-color: #fff;
 
-      /* fixed 1080 x 70 (safe) */
+      /* fixed 1080 x 70 */
       --label-font: 13px;
       --text-font: 17px;
 
       --label-pad-x: 12px;
-      --label-pad-y: 4px;
 
+      /* spacing */
+      --label-row-gap: 4px;   /* ← ラベル内 EN / JP 行間 */
       --after-label-gap: 12px;
       --en-ja-gap: 6px;
 
-      /* scroll speed (20% slower than previous) */
-      --speed-pps: 102;   /* px/sec */
-
-      --update-interval-sec: 60;
+      /* scroll (20% slower) */
+      --speed-pps: 102;
       --gap-px: 80;
       --min-distance-px: 900;
+      --update-interval-sec: 60;
     }
 
     *{ box-sizing:border-box; }
@@ -53,25 +53,27 @@
       overflow:hidden;
     }
 
-    /* ===== LABEL ===== */
+    /* ===== LABEL (FULL HEIGHT) ===== */
     .label{
+      height:70px;                 /* ← 常に70px */
       background:var(--label-bg);
       color:var(--label-color);
       font-weight:900;
-      padding: var(--label-pad-y) var(--label-pad-x);
+      padding: 0 var(--label-pad-x);
       white-space:nowrap;
       user-select:none;
       flex-shrink:0;
       margin:0;
 
       display:grid;
-      grid-template-rows: 1fr 1fr;
-      align-items:center;
+      grid-template-rows: auto auto;
+      align-content:center;        /* ← 上下中央寄せ */
+      row-gap: var(--label-row-gap);
     }
 
     .label span{
       font-size: var(--label-font);
-      line-height:1;
+      line-height:1.2;             /* ← 視認性用 */
       display:flex;
       align-items:center;
     }
@@ -151,23 +153,16 @@
   <script>
   (()=>{
     const $ = s => document.querySelector(s);
-    const band = $("#band");
     const enText = $("#enText");
     const jaText = $("#jaText");
 
     const params = new URLSearchParams(location.search);
     const facility = +(params.get("facility") || 379);
     const limit = Math.max(1, +(params.get("limit") || 10));
-
-    /* 20% slower than previous */
-    const speed = +(params.get("speed") || 102);     // px/sec
+    const speed = +(params.get("speed") || 102);
     const gapPx = +(params.get("gap") || 80);
-    const updSec = +(params.get("interval") || 60);
     const minDistance = +(params.get("mindist") || 900);
-
-    const emergency = ["1","true","on","yes"]
-      .includes(String(params.get("emergency")).toLowerCase());
-    if (emergency) band.classList.add("emergency");
+    const updSec = +(params.get("interval") || 60);
 
     const API = "https://web-api.yukiyama.biz/web-api/news/backward";
 
@@ -207,29 +202,23 @@
       el.appendChild(make());
     }
 
-    function measureOneSetWidth(trackEl){
-      const kids = [...trackEl.children];
-      const half = kids.length / 2;
-      let w = 0;
-      for(let i=0;i<half;i++){
-        w += kids[i].getBoundingClientRect().width;
-      }
+    function measureWidth(el){
+      const kids=[...el.children];
+      const half=kids.length/2;
+      let w=0;
+      for(let i=0;i<half;i++) w+=kids[i].getBoundingClientRect().width;
       return w;
     }
 
-    /* synchronized marquee (EN/JA start aligned) */
-    function setupMarqueeSynced(enEl, jaEl){
-      const enW = measureOneSetWidth(enEl);
-      const jaW = measureOneSetWidth(jaEl);
-
-      const baseW = Math.max(enW, jaW);
+    function setupSyncedMarquee(enEl, jaEl){
+      const baseW = Math.max(measureWidth(enEl), measureWidth(jaEl));
       const travel = Math.max(baseW + gapPx, minDistance);
       const dist = -travel;
       const duration = Math.abs(dist) / speed;
 
       enEl.style.animation = "none";
       jaEl.style.animation = "none";
-      void band.offsetWidth;
+      void document.body.offsetWidth;
 
       enEl.style.setProperty("--distance", dist + "px");
       jaEl.style.setProperty("--distance", dist + "px");
@@ -239,25 +228,13 @@
     }
 
     async function refresh(){
-      try{
-        const [en,ja]=await Promise.all([
-          fetchNews("en").catch(()=>[]),
-          fetchNews("ja").catch(()=>[])
-        ]);
-
-        renderLine(enText, compose(en.length?en:ja));
-        renderLine(jaText, compose(ja.length?ja:en));
-
-        requestAnimationFrame(()=>{
-          setupMarqueeSynced(enText, jaText);
-        });
-      }catch{
-        renderLine(enText,["No updates available"]);
-        renderLine(jaText,["現在、お知らせはありません。"]);
-        requestAnimationFrame(()=>{
-          setupMarqueeSynced(enText, jaText);
-        });
-      }
+      const [en,ja]=await Promise.all([
+        fetchNews("en").catch(()=>[]),
+        fetchNews("ja").catch(()=>[])
+      ]);
+      renderLine(enText, compose(en.length?en:ja));
+      renderLine(jaText, compose(ja.length?ja:en));
+      requestAnimationFrame(()=>setupSyncedMarquee(enText, jaText));
     }
 
     refresh();
