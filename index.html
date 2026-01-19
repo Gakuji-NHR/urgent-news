@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=1080, height=70, initial-scale=1" />
+<meta name="viewport" content="width=1080, height=140, initial-scale=1" />
 <title>HANAZONO Updates Ticker</title>
 
 <style>
@@ -12,14 +12,15 @@
   --label-bg:#c40000;
   --label-color:#fff;
 
-  --label-font:13px;
-  --text-font:17px;
+  /* ===== emphasized ===== */
+  --label-font:15px;   /* 13px × 1.15 */
+  --text-font:19px;    /* 17px × 1.10 */
 
   --label-pad-x:12px;
-  --label-row-gap:4px;
+  --label-row-gap:8px;     /* 4px × 2 */
 
   --after-label-gap:12px;
-  --en-ja-gap:6px;
+  --en-ja-gap:12px;        /* 6px × 2 */
 
   --speed-pps:102;
   --gap-px:80;
@@ -30,14 +31,14 @@
 
 html,body{
   width:1080px;
-  height:70px;
+  height:140px;
   margin:0;
   overflow:hidden;
 }
 
 .band{
   width:1080px;
-  height:70px;
+  height:140px;
   display:flex;
   align-items:center;
   background:var(--band-bg);
@@ -46,7 +47,7 @@ html,body{
 }
 
 .label{
-  height:70px;
+  height:140px;
   background:var(--label-bg);
   color:var(--label-color);
   font-weight:900;
@@ -60,7 +61,7 @@ html,body{
 
 .label span{
   font-size:var(--label-font);
-  line-height:1.2;
+  line-height:1.25;
 }
 
 .textBlock{
@@ -84,14 +85,17 @@ html,body{
 .text{
   font-size:var(--text-font);
   font-weight:700;
-  line-height:1.1;
+  line-height:1.2;
 }
 
 .item{padding-right:2ch}
 
-.separator::after{content:" • ";opacity:.6}
+.separator::after{
+  content:" • ";
+  opacity:.6;
+}
 
-/* ★ <br> replacement */
+/* <br> replacement */
 .br-spacer{
   display:inline-block;
   width:20px;
@@ -144,12 +148,9 @@ function normalizeText(str){
 
 function compose(items){
   return items.map(v=>{
-    const t = (v.title || "").trim();
-    const m = (v.message || "").trim();
-
-    // ★ 区切りは em dash ではなく半角スペース
-    const combined = t && m ? `${t} ${m}` : (t || m);
-
+    const t=(v.title||"").trim();
+    const m=(v.message||"").trim();
+    const combined=t&&m?`${t} ${m}`:(t||m);
     return normalizeText(combined);
   }).filter(Boolean);
 }
@@ -159,7 +160,7 @@ function buildSet(parts){
   parts.forEach((p,i)=>{
     const s=document.createElement("span");
     s.className="item"+(i<parts.length-1?" separator":"");
-    s.innerHTML=p;   // ★ HTMLとして描画
+    s.innerHTML=p;
     f.appendChild(s);
   });
   return f;
